@@ -90,11 +90,16 @@ function parsearDNI(raw) {
   // FASE 1: CLASIFICACIÓN DEL FORMATO
   // ───────────────────────────────────────────────────────────────────────────
   
-  // Condición especial: si contiene tramas nativas de marcas de escaneo con separador "2"
-  const esFormatoMRZ_Con2 = limpio.startsWith("007") && limpio.split("2").length >= 6
-  
+  // Formato con separador " (comilla doble) — ej: 994"APELLIDO"NOMBRE"M"DNI o 00705560150"APELLIDO"...
+  // Se evalúa PRIMERO para que tenga prioridad sobre el detector de separador "2"
+  const esFormatoComilas = limpio.includes('"') && limpio.split('"').length >= 5
+
+  // Condición especial: si contiene tramas nativas con separador "2"
+  // Solo aplica cuando NO hay comillas (el formato comillas también empieza con "007")
+  const esFormatoMRZ_Con2 = !esFormatoComilas && limpio.startsWith("007") && limpio.split("2").length >= 6
+
   // Formato MRZ estándar limpio sin separadores
-  const esFormatoMRZ_Limpio = !esFormatoMRZ_Con2 && !limpio.includes('@') && !limpio.includes('|') && !limpio.includes(';') && limpio.length > 40
+  const esFormatoMRZ_Limpio = !esFormatoMRZ_Con2 && !esFormatoComilas && !limpio.includes('@') && !limpio.includes('|') && !limpio.includes(';') && limpio.length > 40
   
   // ───────────────────────────────────────────────────────────────────────────
   // FASE 2: EXTRACCIÓN SEGÚN EL FORMATO
@@ -134,7 +139,34 @@ function parsearDNI(raw) {
     }
   }
 
-  // ── CASO B: FORMATO MRZ LIMPIO (Sin separadores visibles) ────────────────
+  // ── CASO B: FORMATO CON SEPARADOR " (comilla doble) ─────────────────────
+  // Ej: 994"HENRIQUEZ RIOS"CARLOS DANIEL"M"96511179"A"NO
+  if (esFormatoComilas) {
+    try {
+      const partes = limpio.split('"').map(p => p.trim()).filter(p => p.length > 0)
+      // partes[0] = código (ej: "994")
+      // partes[1] = APELLIDO
+      // partes[2] = NOMBRE
+      // partes[3] = SEXO (M/F)
+      // partes[4] = DNI
+      const apellido = partes[1] || ''
+      const nombre   = partes[2] || ''
+      const dni      = partes[4] && /^\d{7,8}$/.test(partes[4]) ? partes[4] : ''
+
+      if (!dni) {
+        // Buscar el DNI en cualquier posición por si el orden varía
+        const dniFallback = partes.find(p => /^\d{7,8}$/.test(p)) || ''
+        return { apellido, nombre, dni: dniFallback, cuil: '' }
+      }
+
+      return { apellido, nombre, dni, cuil: '' }
+    } catch (error) {
+      console.error("Error procesando formato comillas:", error)
+      return null
+    }
+  }
+
+  // ── CASO C: FORMATO MRZ LIMPIO (Sin separadores visibles) ────────────────
   if (esFormatoMRZ_Limpio) {
     try {
       const matchSexoDni = limpio.match(/([MF])(\d{7,8})[A-Z]/i)

@@ -87,99 +87,90 @@ function parsearDNI(raw) {
   if (!limpio) return null
 
   // ───────────────────────────────────────────────────────────────────────────
-  // FASE 1: CLASIFICACIÓN DEL FORMATO
-  // ───────────────────────────────────────────────────────────────────────────
-  
-  // Formato con separador " (comilla doble) — ej: 994"APELLIDO"NOMBRE"M"DNI o 00705560150"APELLIDO"...
-  // Se evalúa PRIMERO para que tenga prioridad sobre el detector de separador "2"
-  const esFormatoComilas = limpio.includes('"') && limpio.split('"').length >= 5
-
-  // Condición especial: si contiene tramas nativas con separador "2"
-  // Solo aplica cuando NO hay comillas (el formato comillas también empieza con "007")
-  const esFormatoMRZ_Con2 = !esFormatoComilas && limpio.startsWith("007") && limpio.split("2").length >= 6
-
-  // Formato MRZ estándar limpio sin separadores
-  const esFormatoMRZ_Limpio = !esFormatoMRZ_Con2 && !esFormatoComilas && !limpio.includes('@') && !limpio.includes('|') && !limpio.includes(';') && limpio.length > 40
-  
-  // ───────────────────────────────────────────────────────────────────────────
-  // FASE 2: EXTRACCIÓN SEGÚN EL FORMATO
+  // FASE 1: DETECTAR SEPARADOR Y FORMATO
   // ───────────────────────────────────────────────────────────────────────────
 
-  // ── CASO A: NUEVO FORMATO CON SEPARADORES "2" (Tus 3 ejemplos reales) ─────
+  // Detectar separador dominante (" - @ | ; [ ])
+  const candidatosSep = ['"', '-', '@', '|', ';', '[', ']']
+  let separadorDominante = null
+  let maxOcurrencias = 0
+  for (const sep of candidatosSep) {
+    const count = limpio.split(sep).length - 1
+    if (count > maxOcurrencias) {
+      maxOcurrencias = count
+      separadorDominante = sep
+    }
+  }
+  const tieneSeparadorMultiple = maxOcurrencias >= 4
+
+  // Formato MRZ con separador "2" (código empieza con 007, SIN separadores múltiples)
+  const esFormatoMRZ_Con2 = !tieneSeparadorMultiple && limpio.startsWith("007") && limpio.split("2").length >= 6
+
+  // Formato MRZ limpio sin separadores visibles (muy largo, sin separadores comunes)
+  const esFormatoMRZ_Limpio = !esFormatoMRZ_Con2 && !tieneSeparadorMultiple && limpio.length > 40
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // FASE 2: EXTRACCIÓN SEGÚN FORMATO
+  // ───────────────────────────────────────────────────────────────────────────
+
+  // ── CASO A: FORMATO MRZ CON SEPARADOR "2" ─────────────────────────────────
   if (esFormatoMRZ_Con2) {
     try {
-      // Separamos la cadena usando el número 2 como delimitador
       const partes = limpio.split("2").map(p => p.trim()).filter(p => p.length > 0)
-      
-      // Estructura identificada en tus logs:
-      // partes[0] = Código soporte (ej: 00705560150)
-      // partes[1] = APELLIDO (ej: SANTILLAN)
-      // partes[2] = NOMBRE (ej: RODRIGO NICOLAS)
-      // partes[3] = SEXO + DNI (ej: M43318238 o M236421087) -> A veces el lector mete otro "2" intermedio
-      
       const apellido = partes[1] || 'Desconocido'
       const nombre   = partes[2] || 'Desconocido'
-      
-      // Para encontrar el DNI de forma infalible, unimos los fragmentos restantes
-      // y buscamos un bloque de 8 números que esté precedido por M o F
       const restoCadena = partes.slice(3).join("")
       const matchDni = restoCadena.match(/([MF])(\d{7,8})/i)
-      
       const dni = matchDni ? matchDni[2] : 'Desconocido'
-      
-      return {
-        apellido: apellido,
-        nombre: nombre,
-        dni: dni,
-        cuil: '' // Este formato no expone el CUIL nativo
-      }
+      return { apellido, nombre, dni, cuil: '' }
     } catch (error) {
       console.error("Error procesando formato MRZ con separador 2:", error)
       return null
     }
   }
 
-  // ── CASO B: FORMATO CON SEPARADOR " (comilla doble) ─────────────────────
-  // Ej: 994"HENRIQUEZ RIOS"CARLOS DANIEL"M"96511179"A"NO
-  if (esFormatoComilas) {
+  // ── CASO B: FORMATO CON SEPARADOR MÚLTIPLE (" - @ | ;) ───────────────────
+  // DNI viejo: 994"APELLIDO"NOMBRE"M"DNI"...
+  // DNI nuevo: 00744134478"APELLIDO"NOMBRE"DNI"B"03-09-99"17-12-25"JWT
+  // PDF417 clásico: código@APELLIDO@NOMBRE@...@DNI@...
+  if (tieneSeparadorMultiple) {
     try {
-      const partes = limpio.split('"').map(p => p.trim()).filter(p => p.length > 0)
-      // partes[0] = código (ej: "994")
-      // partes[1] = APELLIDO
-      // partes[2] = NOMBRE
-      // partes[3] = SEXO (M/F)
-      // partes[4] = DNI
-      const apellido = partes[1] || ''
-      const nombre   = partes[2] || ''
-      const dni      = partes[4] && /^\d{7,8}$/.test(partes[4]) ? partes[4] : ''
+      const partes = limpio.split(separadorDominante).map(p => p.trim()).filter(p => p.length > 0)
 
-      if (!dni) {
-        // Buscar el DNI en cualquier posición por si el orden varía
-        const dniFallback = partes.find(p => /^\d{7,8}$/.test(p)) || ''
-        return { apellido, nombre, dni: dniFallback, cuil: '' }
-      }
+      // DNI: único campo de exactamente 7-8 dígitos
+      const dniIdx = partes.findIndex(p => /^\d{7,8}$/.test(p))
+      if (dniIdx === -1) return null
+      const dni = partes[dniIdx]
+
+      // Sexo: campo de un solo carácter M o F (puede estar antes o después del DNI)
+      const sexoIdx = partes.findIndex(p => /^[MF]$/i.test(p))
+
+      // Apellido y nombre: campos de solo letras y espacios, aparecen antes del DNI
+      const camposTexto = partes
+        .slice(0, dniIdx)
+        .filter(p => /^[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜa-záéíóúñü\s]+$/.test(p) && p.length > 1)
+
+      const apellido = camposTexto[0] || ''
+      const nombre   = camposTexto[1] || ''
 
       return { apellido, nombre, dni, cuil: '' }
     } catch (error) {
-      console.error("Error procesando formato comillas:", error)
+      console.error(`Error procesando formato separador '${separadorDominante}':`, error)
       return null
     }
   }
 
-  // ── CASO C: FORMATO MRZ LIMPIO (Sin separadores visibles) ────────────────
+  // ── CASO C: FORMATO MRZ LIMPIO (sin separadores) ──────────────────────────
   if (esFormatoMRZ_Limpio) {
     try {
       const matchSexoDni = limpio.match(/([MF])(\d{7,8})[A-Z]/i)
       if (!matchSexoDni) return null
-
       const dni = matchSexoDni[2]
       let bloqueTexto = limpio.substring(11)
-      
       const indiceCorte = bloqueTexto.search(/[MF]\d{7,8}[A-Z]/i)
       if (indiceCorte !== -1) {
         bloqueTexto = bloqueTexto.substring(0, indiceCorte).trim()
       }
-
       let apellido = bloqueTexto
       let nombre = ''
       const palabras = bloqueTexto.split(/\s+/)
@@ -187,50 +178,78 @@ function parsearDNI(raw) {
         apellido = palabras[0]
         nombre = palabras.slice(1).join(' ')
       }
-
-      return {
-        apellido: apellido || 'Desconocido',
-        nombre: nombre || 'Desconocido',
-        dni: dni,
-        cuil: ''
-      }
+      return { apellido: apellido || 'Desconocido', nombre: nombre || 'Desconocido', dni, cuil: '' }
     } catch (error) {
       console.error("Error procesando formato MRZ limpio:", error)
       return null
     }
   }
 
-  // ── CASO C: LOGICA PARA DNI PDF417 CLÁSICO (Tu código original intacto) ──
-  const candidatos = ['@', '"', '|', ';']
-  let sep = '@', maxCount = 0
-  for (const s of candidatos) {
+  // ── CASO C: FORMATOS CON SEPARADORES (", @, ,, |, ;) ──────────────────────
+  // Estrategia unificada: detectar el separador más usado, splitear,
+  // y extraer campos por contenido (no por posición fija)
+  
+  const separadores = ['"', '@', ',', '|', ';']
+  let sep = '"'
+  let maxCount = 0
+  
+  for (const s of separadores) {
     const count = limpio.split(s).length - 1
-    if (count > maxCount) { maxCount = count; sep = s }
+    if (count > maxCount) {
+      maxCount = count
+      sep = s
+    }
   }
 
-  if (maxCount >= 4) {
-    const partes = limpio.split(sep).map((p) => p.trim()).filter((p) => p.length > 0)
-    let apellido = '', nombre = '', dni = '', cuil = ''
-    
-    if (partes.length >= 9 && /^\d{7,8}$/.test(partes[4]) && /^\d{3}$/.test(partes[8])) {
-      apellido = partes[1]; nombre = partes[2]; dni = partes[4]
-      const codigoCUIL = partes[8]
-      cuil = `${codigoCUIL.substring(0,2)}${dni}${codigoCUIL.substring(2,3)}`
-      return { apellido, nombre, dni, cuil }
-    }
-    
-    const partesLimpias = partes.map((p) => p.replace(/["@|;]/g, '').trim()).filter((p) => p.length > 0)
-    for (let i = 0; i < partesLimpias.length; i++) {
-      const p = partesLimpias[i]
-      const cuilMatch = p.match(/(?:CUIL)?(\d{2}-?\d{8}-?\d{1})$/)
-      if (!cuil && cuilMatch) { cuil = cuilMatch[1].replace(/-/g, ''); continue }
-      if (!dni && /^\d{7,8}$/.test(p)) { dni = p; continue }
-      if (/^[A-ZÁÉÍÓÚÑÜa-záéíóúñü\s]+$/.test(p) && p.length > 1) {
-        if (!apellido) apellido = p
-        else if (!nombre) nombre = p
+  if (maxCount >= 3) {
+    try {
+      const partes = limpio.split(sep)
+        .map(p => p.trim().replace(/["@|;,]/g, '')) // limpiar separadores residuales
+        .filter(p => p.length > 0)
+
+      // Buscar DNI: campo de exactamente 7-8 dígitos puros
+      const dniIdx = partes.findIndex(p => /^\d{7,8}$/.test(p))
+      if (dniIdx === -1) return null
+      const dni = partes[dniIdx]
+
+      // Buscar CUIL: formato XX-XXXXXXXX-X o 11 dígitos seguidos
+      const cuilMatch = partes.find(p => p.match(/(?:CUIL)?(\d{2}-?\d{8}-?\d{1})$/))
+      const cuil = cuilMatch ? cuilMatch.replace(/[^\d]/g, '') : ''
+
+      // Apellido y nombre: campos de solo letras, espacios y acentos
+      // Típicamente aparecen antes del DNI
+      const camposTexto = partes
+        .slice(0, dniIdx)
+        .filter(p => {
+          // Debe empezar con mayúscula y tener al menos 2 caracteres
+          // Acepta letras, espacios, acentos, diéresis
+          return /^[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜa-záéíóúñü\s]+$/.test(p) && p.length > 1
+        })
+
+      const apellido = camposTexto[0] || ''
+      const nombre   = camposTexto[1] || ''
+
+      // Si no encontramos nombre/apellido en los campos de texto,
+      // buscar en toda la lista (fallback para formatos raros)
+      if (!apellido && !nombre) {
+        const textoFallback = partes.filter(p => 
+          /^[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜa-záéíóúñü\s]+$/.test(p) && 
+          p.length > 1 &&
+          !/^\d/.test(p) // no empieza con número
+        )
+        return {
+          apellido: textoFallback[0] || '',
+          nombre: textoFallback[1] || '',
+          dni,
+          cuil
+        }
       }
+
+      return { apellido, nombre, dni, cuil }
+    } catch (error) {
+      console.error("Error procesando formato con separadores:", error)
+      return null
     }
-    return { apellido, nombre, dni, cuil }
   }
 
   return null

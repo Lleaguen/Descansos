@@ -414,6 +414,8 @@ export default function App() {
   const [tab, setTab] = useState('dashboard') // 'dashboard' | 'historial' | 'excedidos'
   const [syncStatus, setSyncStatus] = useState(null) // null | 'syncing' | 'ok' | 'error'
   const [cargando, setCargando] = useState(true)
+  const [modalAbierto, setModalAbierto] = useState(false)
+  const [formData, setFormData] = useState({ nombre: '', apellido: '', dni: '', cuil: '' })
 
   // ─── Rehidratar estado desde Google Sheets al montar ──────────────────────
   useEffect(() => {
@@ -628,6 +630,111 @@ export default function App() {
   }
 
   const cerrarFlash = () => { setFlash(null); setEsperando(true) }
+
+  const handleSubmitManual = (e) => {
+    e.preventDefault()
+    if (!formData.nombre.trim() || !formData.apellido.trim() || !formData.dni.trim()) {
+      setError('Nombre, apellido y DNI son obligatorios')
+      return
+    }
+    if (!/^\d{7,8}$/.test(formData.dni)) {
+      setError('El DNI debe tener 7 u 8 dígitos')
+      return
+    }
+
+    // Simular escaneo con los datos del formulario
+    const datosSimulados = {
+      nombre: formData.nombre.trim().toUpperCase(),
+      apellido: formData.apellido.trim().toUpperCase(),
+      dni: formData.dni.trim(),
+      cuil: formData.cuil.trim()
+    }
+
+    // Resetear formulario y cerrar modal
+    setFormData({ nombre: '', apellido: '', dni: '', cuil: '' })
+    setModalAbierto(false)
+
+    // Procesar como si fuera un escaneo
+    const ahora = ahoraDate()
+
+    // Bloqueo 12h
+    const SEGS_12H = 12 * 60 * 60
+    const descansoPrevio = historial.find(
+      (h) => String(h.dni) === String(datosSimulados.dni) &&
+             diffSegundos(h.vuelta, ahora) < SEGS_12H
+    )
+    if (descansoPrevio) {
+      const segsRestantes = SEGS_12H - diffSegundos(descansoPrevio.vuelta, ahora)
+      const h = Math.floor(segsRestantes / 3600)
+      const m = Math.floor((segsRestantes % 3600) / 60)
+      setError(
+        `${datosSimulados.apellido} ${datosSimulados.nombre} ya tomó descanso hoy. ` +
+        `Puede volver a fichar en ${h}h ${m}min.`
+      )
+      setEsperando(true)
+      return
+    }
+
+    const existente = descansos[datosSimulados.dni]
+
+    if (!existente) {
+      // SALIDA
+      const nuevo = { ...datosSimulados, salida: ahora }
+      setDescansos((prev) => ({ ...prev, [datosSimulados.dni]: nuevo }))
+      setFlash({ tipo: 'salida', datos: nuevo })
+      setEsperando(false)
+
+      setSyncStatus('syncing')
+      registrarSalidaEnSheet(nuevo)
+        .then((res) => {
+          if (res?.estatus === 'ERROR' || res?.error) {
+            console.error('Sheets: error al registrar salida', res)
+            setSyncStatus('error')
+          } else {
+            setSyncStatus('ok')
+          }
+        })
+        .catch((err) => {
+          console.error('Sheets: fallo de red en salida', err)
+          setSyncStatus('error')
+        })
+    } else {
+      // VUELTA
+      const segundosTomados = diffSegundos(existente.salida, ahora)
+      const enTolerancia = segundosTomados > SEGS_DESCANSO && segundosTomados <= SEGS_LIMITE
+      const excedido = segundosTomados > SEGS_LIMITE
+      const registro = { ...existente, vuelta: ahora, segundosTomados, enTolerancia, excedido }
+
+      setDescansos((prev) => {
+        const siguiente = { ...prev }
+        delete siguiente[datosSimulados.dni]
+        return siguiente
+      })
+      setFlash({ tipo: 'vuelta', datos: registro })
+      setHistorial((h) => [registro, ...h])
+      setEsperando(false)
+
+      const textoExcedido = excedido
+        ? `Excedido +${formatDuracionSegundos(segundosTomados - SEGS_LIMITE)}`
+        : enTolerancia
+          ? `Tolerancia +${formatDuracionSegundos(segundosTomados - SEGS_DESCANSO)}`
+          : 'A tiempo'
+      setSyncStatus('syncing')
+      registrarVueltaEnSheet(datosSimulados.dni, textoExcedido)
+        .then((res) => {
+          if (res?.estatus === 'ERROR' || res?.error) {
+            console.error('Sheets: error al registrar vuelta', res)
+            setSyncStatus('error')
+          } else {
+            setSyncStatus('ok')
+          }
+        })
+        .catch((err) => {
+          console.error('Sheets: fallo de red en vuelta', err)
+          setSyncStatus('error')
+        })
+    }
+  }
 
   const activosArray = Object.values(descansos)
 
@@ -1051,6 +1158,79 @@ export default function App() {
           </section>
         )}
       </main>
+
+      {/* ── Botón flotante para carga manual ── */}
+      <button 
+        className="btn-flotante" 
+        onClick={() => setModalAbierto(true)}
+        title="Registrar sin DNI"
+      >
+        ➕
+      </button>
+
+      {/* ── Modal de carga manual ── */}
+      {modalAbierto && (
+        <div className="modal-overlay" onClick={() => setModalAbierto(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Registrar manualmente</h3>
+              <button className="modal-close" onClick={() => setModalAbierto(false)}>✕</button>
+            </div>
+            <form className="modal-form" onSubmit={handleSubmitManual}>
+              <div className="form-group">
+                <label>Apellido *</label>
+                <input
+                  type="text"
+                  value={formData.apellido}
+                  onChange={(e) => setFormData({...formData, apellido: e.target.value})}
+                  placeholder="PÉREZ"
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="form-group">
+                <label>Nombre *</label>
+                <input
+                  type="text"
+                  value={formData.nombre}
+                  onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                  placeholder="JUAN CARLOS"
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>DNI *</label>
+                <input
+                  type="text"
+                  value={formData.dni}
+                  onChange={(e) => setFormData({...formData, dni: e.target.value.replace(/\D/g, '')})}
+                  placeholder="12345678"
+                  required
+                  maxLength={8}
+                />
+              </div>
+              <div className="form-group">
+                <label>CUIL (opcional)</label>
+                <input
+                  type="text"
+                  value={formData.cuil}
+                  onChange={(e) => setFormData({...formData, cuil: e.target.value.replace(/\D/g, '')})}
+                  placeholder="20123456789"
+                  maxLength={11}
+                />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setModalAbierto(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn-primary">
+                  Registrar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

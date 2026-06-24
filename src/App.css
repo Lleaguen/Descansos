@@ -307,7 +307,7 @@ body {
 /* ─── KPI Grid ───────────────────────────────────────────────────────────── */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
 }
 
@@ -669,9 +669,113 @@ body {
 
 @media (max-width: 640px) {
   :root { --sidebar-w: 0px; }
+
+  /* ── Layout ── */
+  .dashboard { flex-direction: column; }
   .sidebar { display: none; }
-  .main-content { margin-left: 0; padding: 1rem; }
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .main-content { margin-left: 0; padding: 0.75rem; gap: 0.85rem; }
+
+  /* ── Bottom nav mobile (reemplaza sidebar) ── */
+  .mobile-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #0d1b2a;
+    z-index: 100;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+  .mobile-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    padding: 0.6rem 0.25rem;
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.45);
+    font-size: 0.62rem;
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+    transition: color 0.15s;
+  }
+  .mobile-nav-item.nav-active { color: #00AEEF; }
+  .mobile-nav-item .nav-icon { font-size: 1.2rem; }
+  .mobile-nav-badge {
+    position: absolute;
+    top: 6px;
+    right: calc(50% - 18px);
+    background: #ef4444;
+    color: #fff;
+    font-size: 0.58rem;
+    font-weight: 700;
+    min-width: 15px;
+    height: 15px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
+  }
+
+  /* Espacio para el bottom nav */
+  .main-content { padding-bottom: 4.5rem; }
+
+  /* ── Header ── */
+  .main-header { flex-direction: column; gap: 0.5rem; }
+  .header-title { font-size: 1.2rem; }
+  .header-sub { font-size: 0.75rem; }
+  .header-scanner-status { font-size: 0.78rem; }
+
+  /* ── KPI ── */
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
+  .kpi-card { padding: 0.85rem 0.9rem; gap: 0.6rem; }
+  .kpi-icon { width: 36px; height: 36px; font-size: 1.1rem; }
+  .kpi-value { font-size: 1.25rem; }
+  .kpi-label { font-size: 0.72rem; }
+  .kpi-sub { display: none; }
+
+  /* ── Section card ── */
+  .section-card { padding: 1rem; border-radius: 10px; }
+  .section-header { flex-wrap: wrap; gap: 0.5rem; }
+  .section-title { font-size: 0.9rem; }
+
+  /* ── Tablas: scroll horizontal ── */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tabla { font-size: 0.78rem; min-width: 540px; }
+  .tabla th, .tabla td { padding: 0.5rem 0.6rem; }
+
+  /* ── Activos ── */
+  .activos-grid { grid-template-columns: 1fr; }
+  .activo-card { padding: 0.85rem; gap: 0.75rem; }
+  .activo-nombre { font-size: 0.9rem; }
+
+  /* ── Flash notification ── */
+  .flash-notification { padding: 0.85rem 1rem; gap: 0.75rem; border-radius: 10px; }
+  .flash-title { font-size: 0.88rem; }
+  .flash-times { flex-direction: column; gap: 0.2rem; font-size: 0.78rem; }
+
+  /* ── Modal ── */
+  .modal-content { width: 95%; max-width: none; border-radius: 12px; }
+  .modal-header { padding: 1rem 1.1rem; }
+  .modal-form { padding: 1rem 1.1rem; }
+  .modal-actions { flex-direction: column; }
+  .btn-secondary, .btn-primary { width: 100%; padding: 0.75rem; }
+
+  /* ── Botón flotante: más chico y arriba del nav ── */
+  .btn-flotante { bottom: 5rem; right: 1rem; width: 50px; height: 50px; font-size: 1.5rem; }
+
+  /* ── Charts ── */
+  .chart-container { padding: 0; }
+
+  /* ── Rank list ── */
+  .rank-item { padding: 0.6rem 0; gap: 0.75rem; }
+  .rank-nombre { font-size: 0.85rem; }
+  .rank-duracion { font-size: 1rem; }
 }
 
 /* ─── Nav badge (contador excedidos en sidebar) ──────────────────────────── */
@@ -742,6 +846,9 @@ body {
   background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
 }
+
+/* ─── Bottom nav mobile (oculto en desktop) ─────────────────────────────── */
+.mobile-nav { display: none; }
 
 /* ─── Botón flotante para carga manual ──────────────────────────────────── */
 .btn-flotante {
@@ -913,4 +1020,47 @@ body {
   background: var(--primary-dark);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(0, 174, 239, 0.3);
+}
+
+/* ─── Buscador ───────────────────────────────────────────────────────────── */
+.search-input {
+  width: 100%;
+  padding: 0.55rem 1rem;
+  margin: 0.75rem 0 1rem;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 0.92rem;
+  font-family: inherit;
+  color: #1f2937;
+  background: #f9fafb;
+  outline: none;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  box-sizing: border-box;
+  display: block;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-input:focus {
+  border-color: #00AEEF;
+  box-shadow: 0 0 0 3px rgba(0, 174, 239, 0.12);
+  background: #fff;
+}
+
+.search-input::placeholder {
+  color: #9ca3af;
+}
+
+/* Ocultar el botón X nativo del input[type=search] */
+.search-input::-webkit-search-cancel-button,
+.search-input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-empty {
+  padding: 2rem;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.92rem;
 }

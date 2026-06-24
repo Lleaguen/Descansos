@@ -412,6 +412,9 @@ export default function App({ onCambiarRol }) {
   const [descansos, setDescansos] = useState({})
   const [historial, setHistorial] = useState([])
   const [tab, setTab] = useState('dashboard') // 'dashboard' | 'historial' | 'excedidos'
+  const [busquedaActivos, setBusquedaActivos] = useState('')
+  const [busquedaHistorial, setBusquedaHistorial] = useState('')
+  const [busquedaExcedidos, setBusquedaExcedidos] = useState('')
   const [syncStatus, setSyncStatus] = useState(null) // null | 'syncing' | 'ok' | 'error'
   const [cargando, setCargando] = useState(true)
   const [modalAbierto, setModalAbierto] = useState(false)
@@ -421,9 +424,22 @@ export default function App({ onCambiarRol }) {
 
   // ─── Rehidratar estado desde Google Sheets al montar ──────────────────────
   useEffect(() => {
+    // Convierte cualquier formato de fecha a "D/M/YYYY" normalizado
     const normFecha = (val) => {
-      if (!val) return ''
-      return String(val).trim().split('/').map((p) => String(Number(p))).join('/')
+      if (!val && val !== 0) return ''
+      // Número serial de Excel/Sheets (ej: 46000)
+      if (typeof val === 'number') {
+        const d = new Date(Math.round((val - 25569) * 86400 * 1000))
+        return `${d.getUTCDate()}/${d.getUTCMonth() + 1}/${d.getUTCFullYear()}`
+      }
+      const str = String(val).trim()
+      // Formato ISO "2025-06-24"
+      if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+        const d = new Date(str)
+        return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`
+      }
+      // Formato "24/6/2025" o "24/06/2025" → normalizar quitando ceros
+      return str.split('/').map((p) => String(Number(p))).join('/')
     }
 
     const parsearHora = (horaStr) => {
@@ -445,17 +461,25 @@ export default function App({ onCambiarRol }) {
 
     Promise.all([obtenerAutorizados(), obtenerRegistrosSheet()])
       .then(([autorizadosData, registros]) => {
-        const hoy = new Date().toLocaleDateString('es-AR')
+        const ahora = new Date()
+        const hoy = `${ahora.getDate()}/${ahora.getMonth() + 1}/${ahora.getFullYear()}`
 
-        // Guardar autorizados como lista de DNI strings (sin filtrar por fecha,
-        // la hoja AUTORIZADOS ya contiene solo los del día en curso)
+        // Autorizados: lista de DNI strings
         const listaAutorizados = Array.isArray(autorizadosData) ? autorizadosData : []
         const dnisAutorizadosHoy = listaAutorizados.map((a) => String(a.dni).trim())
         setAutorizados(dnisAutorizadosHoy)
 
         if (!Array.isArray(registros)) return
 
+        // Debug: ver qué fechas llegan desde Sheets
+        if (registros.length > 0) {
+          console.log('[Sheets] Primera fecha recibida:', registros[0].fecha, '| tipo:', typeof registros[0].fecha)
+          console.log('[Sheets] Fecha normalizada:', normFecha(registros[0].fecha), '| Hoy:', hoy)
+        }
+
         const deHoy = registros.filter((r) => normFecha(r.fecha) === hoy)
+        console.log(`[Sheets] Total registros: ${registros.length} | Del día: ${deHoy.length}`)
+
         const nuevoHistorial = []
         const nuevosDescansos = {}
 
@@ -476,8 +500,7 @@ export default function App({ onCambiarRol }) {
               salida, vuelta, segundosTomados, enTolerancia, excedido,
             })
           } else {
-            // Rehidratar descanso activo si el DNI está autorizado
-            if (!dnisAutorizadosHoy.includes(String(r.dni).trim())) return
+            // Rehidratar descanso activo (no requiere autorización para mostrarlo)
             nuevosDescansos[r.dni] = {
               nombre: r.nombre || '',
               apellido: r.apellido || '',
@@ -635,7 +658,6 @@ export default function App({ onCambiarRol }) {
       return
     }
 
-    // Simular escaneo con los datos del formulario
     const datosSimulados = {
       nombre: formData.nombre.trim().toUpperCase(),
       apellido: formData.apellido.trim().toUpperCase(),
@@ -643,11 +665,6 @@ export default function App({ onCambiarRol }) {
       cuil: formData.cuil.trim()
     }
 
-    // Resetear formulario y cerrar modal
-    setFormData({ nombre: '', apellido: '', dni: '', cuil: '' })
-    setModalAbierto(false)
-
-    // Procesar como si fuera un escaneo
     const ahora = ahoraDate()
 
     // Bloqueo 12h
@@ -664,11 +681,23 @@ export default function App({ onCambiarRol }) {
         `${datosSimulados.apellido} ${datosSimulados.nombre} ya tomó descanso hoy. ` +
         `Puede volver a fichar en ${h}h ${m}min.`
       )
-      setEsperando(true)
       return
     }
 
     const existente = descansos[datosSimulados.dni]
+
+    // Bloqueo de autorización: solo aplica para salidas nuevas (no para vueltas)
+    if (!existente && autorizados !== null && !autorizados.includes(String(datosSimulados.dni).trim())) {
+      setError(
+        `${datosSimulados.apellido} ${datosSimulados.nombre} no está autorizado para salir al descanso. ` +
+        `Un supervisor debe autorizarlo primero.`
+      )
+      return
+    }
+
+    // Validaciones OK — recién ahora cerramos el modal
+    setFormData({ nombre: '', apellido: '', dni: '', cuil: '' })
+    setModalAbierto(false)
 
     if (!existente) {
       // SALIDA
@@ -764,6 +793,20 @@ export default function App({ onCambiarRol }) {
 
   // Top 5 para dashboard
   const topExcedidos = listaExcedidos.slice(0, 5)
+
+  // ─── Filtros de búsqueda ────────────────────────────────────────────────────
+  const filtrar = (lista, q) => {
+    if (!q.trim()) return lista
+    const t = q.toLowerCase().trim()
+    return lista.filter((h) =>
+      (h.apellido || '').toLowerCase().includes(t) ||
+      (h.nombre   || '').toLowerCase().includes(t) ||
+      String(h.dni).includes(t)
+    )
+  }
+  const activosFiltrados   = filtrar(activosArray, busquedaActivos)
+  const historialFiltrado  = filtrar(historial, busquedaHistorial)
+  const excedidosFiltrados = filtrar(listaExcedidos, busquedaExcedidos)
 
   return (
     <div className="dashboard">
@@ -896,8 +939,18 @@ export default function App({ onCambiarRol }) {
                     {activosArray.length} persona{activosArray.length !== 1 ? 's' : ''}
                   </span>
                 </div>
+                <input
+                  className="search-input"
+                  type="search"
+                  placeholder="Buscar por nombre, apellido o DNI..."
+                  value={busquedaActivos}
+                  onChange={(e) => setBusquedaActivos(e.target.value)}
+                />
                 <div className="activos-grid">
-                  {activosArray.map((p) => <TarjetaActivo key={p.dni} persona={p} />)}
+                  {activosFiltrados.length === 0
+                    ? <div className="search-empty">Sin resultados para "{busquedaActivos}"</div>
+                    : activosFiltrados.map((p) => <TarjetaActivo key={p.dni} persona={p} />)
+                  }
                 </div>
               </section>
             )}
@@ -1032,15 +1085,24 @@ export default function App({ onCambiarRol }) {
                 <span className="section-dot" style={{ background: COLOR_PRIMARY }} />Historial del día
               </h2>
               <span className="section-badge" style={{ background: `${COLOR_PRIMARY}22`, color: COLOR_PRIMARY }}>
-                {historial.length} registro{historial.length !== 1 ? 's' : ''}
+                {historialFiltrado.length}{busquedaHistorial ? ` de ${historial.length}` : ''} registro{historial.length !== 1 ? 's' : ''}
               </span>
             </div>
+            <input
+              className="search-input"
+              type="search"
+              placeholder="Buscar por nombre, apellido o DNI..."
+              value={busquedaHistorial}
+              onChange={(e) => setBusquedaHistorial(e.target.value)}
+            />
             {historial.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon">📋</div>
                 <div className="empty-title">Sin registros aún</div>
                 <div className="empty-sub">Los descansos completados aparecerán aquí</div>
               </div>
+            ) : historialFiltrado.length === 0 ? (
+              <div className="search-empty">Sin resultados para "{busquedaHistorial}"</div>
             ) : (
               <div className="table-wrap">
                 <table className="tabla">
@@ -1050,9 +1112,9 @@ export default function App({ onCambiarRol }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {historial.map((h, i) => (
+                    {historialFiltrado.map((h, i) => (
                       <tr key={i} className={h.excedido ? 'tr-excedido' : h.enTolerancia ? 'tr-tolerancia' : ''}>
-                        <td className="td-num">{historial.length - i}</td>
+                        <td className="td-num">{historialFiltrado.length - i}</td>
                         <td className="td-persona">
                           <div className="tabla-avatar" style={{
                             background: h.excedido ? '#fee2e2' : h.enTolerancia ? '#fef9c3' : '#e0f7ff',
@@ -1097,12 +1159,21 @@ export default function App({ onCambiarRol }) {
                 📥 Exportar Excel
               </button>
             </div>
+            <input
+              className="search-input"
+              type="search"
+              placeholder="Buscar por nombre, apellido o DNI..."
+              value={busquedaExcedidos}
+              onChange={(e) => setBusquedaExcedidos(e.target.value)}
+            />
             {listaExcedidos.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon">✅</div>
                 <div className="empty-title">Sin excedidos aún</div>
                 <div className="empty-sub">Todos los descansos están dentro del tiempo permitido</div>
               </div>
+            ) : excedidosFiltrados.length === 0 ? (
+              <div className="search-empty">Sin resultados para "{busquedaExcedidos}"</div>
             ) : (
               <div className="table-wrap">
                 <table className="tabla">
@@ -1122,7 +1193,7 @@ export default function App({ onCambiarRol }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {listaExcedidos.map((h, i) => (
+                    {excedidosFiltrados.map((h, i) => (
                       <tr key={i} className={h.excedido ? 'tr-excedido' : 'tr-tolerancia'}>
                         <td className="td-num">{i + 1}</td>
                         <td>{formatFecha(h.vuelta)}</td>
@@ -1154,6 +1225,25 @@ export default function App({ onCambiarRol }) {
           </section>
         )}
       </main>
+
+      {/* ── Bottom nav mobile ── */}
+      <nav className="mobile-nav">
+        <button className={`mobile-nav-item ${tab === 'dashboard' ? 'nav-active' : ''}`} onClick={() => setTab('dashboard')}>
+          <span className="nav-icon">📊</span>
+          <span>Inicio</span>
+        </button>
+        <button className={`mobile-nav-item ${tab === 'historial' ? 'nav-active' : ''}`} onClick={() => setTab('historial')}>
+          <span className="nav-icon">📋</span>
+          <span>Historial</span>
+        </button>
+        <button className={`mobile-nav-item ${tab === 'excedidos' ? 'nav-active' : ''}`} onClick={() => setTab('excedidos')}>
+          <span className="nav-icon">⚠️</span>
+          <span>Excedidos</span>
+          {listaExcedidos.length > 0 && (
+            <span className="mobile-nav-badge">{listaExcedidos.length}</span>
+          )}
+        </button>
+      </nav>
 
       {/* ── Botón flotante para carga manual ── */}
       <button 

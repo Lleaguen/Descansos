@@ -405,3 +405,44 @@
 }
 
 .sv-modal-actions .btn-confirmar:hover { background: #0090c8; }
+
+/* ─── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .sv-header {
+    padding: 0.85rem 1rem;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .sv-logo { width: 80px; }
+
+  .sv-header-center h1 { font-size: 1rem; }
+  .sv-header-center p { font-size: 0.72rem; }
+
+  .sv-btn-rol {
+    font-size: 0.75rem;
+    padding: 0.4rem 0.75rem;
+  }
+
+  .sv-main {
+    margin: 1rem auto;
+    padding: 0 0.85rem;
+    gap: 0.85rem;
+  }
+
+  .sv-scanner-bar { font-size: 0.8rem; padding: 0.85rem 1rem; }
+
+  .sv-section-header { flex-wrap: wrap; gap: 0.5rem; }
+  .sv-section-header h2 { font-size: 0.88rem; }
+
+  .sv-item { padding: 0.75rem 1rem; gap: 0.75rem; }
+  .sv-item-nombre { font-size: 0.85rem; }
+
+  .sv-modal { width: 95%; }
+  .sv-modal form { padding: 1rem; }
+  .sv-modal-header { padding: 1rem; }
+
+  .sv-modal-actions { flex-direction: column; }
+  .sv-modal-actions .btn-cancel,
+  .sv-modal-actions .btn-confirmar { width: 100%; padding: 0.75rem; }
+}

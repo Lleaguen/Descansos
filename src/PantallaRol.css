@@ -196,3 +196,28 @@
   from { transform: translateY(16px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+/* ─── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .rol-screen { padding: 1rem; align-items: flex-start; padding-top: 2.5rem; }
+
+  .rol-container {
+    padding: 2rem 1.25rem;
+    border-radius: 12px;
+  }
+
+  .rol-logo { width: 120px; }
+  .rol-title { font-size: 1.3rem; }
+  .rol-sub { font-size: 0.82rem; margin-bottom: 1.75rem; }
+
+  .rol-cards { grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+
+  .rol-card { padding: 1.5rem 0.75rem; }
+  .rol-icon { font-size: 2rem; }
+  .rol-card-title { font-size: 0.92rem; }
+  .rol-card-desc { font-size: 0.72rem; }
+
+  .clave-modal { width: 95%; padding: 1.5rem 1.25rem; }
+  .clave-actions { flex-direction: column; }
+  .btn-cancel, .btn-confirmar { width: 100%; padding: 0.75rem; }
+}

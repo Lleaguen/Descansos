@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import * as XLSX from 'xlsx'
 import logo from './assets/Ocasa.png'
-import { registrarSalidaEnSheet, registrarVueltaEnSheet, obtenerRegistrosSheet } from './services/api'
+import { registrarSalidaEnSheet, registrarVueltaEnSheet, obtenerRegistrosSheet, obtenerAutorizados } from './services/api'
 import './App.css'
 
 const MINUTOS_DESCANSO   = 30
@@ -402,7 +402,7 @@ function CustomBarTooltip({ active, payload, label }) {
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
-export default function App() {
+export default function App({ onCambiarRol }) {
   const [bufferRef] = [useRef('')]
   const timerRef = useRef(null)
   const [buffer, setBuffer] = useState('')
@@ -416,101 +416,85 @@ export default function App() {
   const [cargando, setCargando] = useState(true)
   const [modalAbierto, setModalAbierto] = useState(false)
   const [formData, setFormData] = useState({ nombre: '', apellido: '', dni: '', cuil: '' })
+  // autorizados: null = cargando | array de strings de DNI del día
+  const [autorizados, setAutorizados] = useState(null)
 
   // ─── Rehidratar estado desde Google Sheets al montar ──────────────────────
   useEffect(() => {
-    obtenerRegistrosSheet()
-      .then((registros) => {
-        if (!Array.isArray(registros)) return
+    const normFecha = (val) => {
+      if (!val) return ''
+      return String(val).trim().split('/').map((p) => String(Number(p))).join('/')
+    }
 
+    const parsearHora = (horaStr) => {
+      if (!horaStr) return null
+      const str = String(horaStr).trim()
+      if (!str) return null
+      let hh, mm, ss
+      if (str.includes('T')) {
+        const d = new Date(str)
+        hh = d.getHours(); mm = d.getMinutes(); ss = d.getSeconds()
+      } else {
+        ;[hh, mm, ss] = str.split(':').map(Number)
+      }
+      if (isNaN(hh) || isNaN(mm)) return null
+      const d = new Date()
+      d.setHours(hh, mm, ss || 0, 0)
+      return d
+    }
+
+    Promise.all([obtenerAutorizados(), obtenerRegistrosSheet()])
+      .then(([autorizadosData, registros]) => {
         const hoy = new Date().toLocaleDateString('es-AR')
 
-        // Sheet devuelve "17/06/2026" pero toLocaleDateString es-AR genera "17/6/2026"
-        // Normalizamos ambos lados quitando ceros iniciales en día y mes
-        const normalizarFecha = (val) => {
-          if (!val) return ''
-          return String(val).trim()
-            .split('/')
-            .map((p) => String(Number(p))) // "06" → "6", "2026" queda "2026"
-            .join('/')
-        }
-        const deHoy = registros.filter((r) => normalizarFecha(r.fecha) === hoy)
+        // Guardar autorizados como lista de DNI strings (sin filtrar por fecha,
+        // la hoja AUTORIZADOS ya contiene solo los del día en curso)
+        const listaAutorizados = Array.isArray(autorizadosData) ? autorizadosData : []
+        const dnisAutorizadosHoy = listaAutorizados.map((a) => String(a.dni).trim())
+        setAutorizados(dnisAutorizadosHoy)
 
+        if (!Array.isArray(registros)) return
+
+        const deHoy = registros.filter((r) => normFecha(r.fecha) === hoy)
         const nuevoHistorial = []
         const nuevosDescansos = {}
 
         deHoy.forEach((r) => {
-          // Reconstruir Date desde el valor que puede llegar como:
-          // 1) string "H:MM:SS" o "HH:MM:SS" (si la celda tiene formato hora en Sheets)
-          // 2) ISO string "1899-12-30THH:MM:SS.000Z" donde HH:MM:SS está en UTC
-          //    (Apps Script hace toISOString() que convierte hora local → UTC)
-          //    Argentina = UTC-3 → hay que sumar 3h al leer el ISO
-          const parsearHora = (horaStr) => {
-            if (!horaStr) return null
-            const str = String(horaStr).trim()
-            if (!str) return null
-
-            let hh, mm, ss
-
-            if (str.includes('T')) {
-              // Es un ISO de Sheets — la hora está en UTC, necesitamos local
-              // Usamos los métodos locales del Date (NO getUTC*) para que
-              // el motor JS aplique automáticamente la timezone del navegador
-              const isoDate = new Date(str)
-              hh = isoDate.getHours()
-              mm = isoDate.getMinutes()
-              ss = isoDate.getSeconds()
-            } else {
-              // String directo "H:MM:SS" o "HH:MM:SS"
-              ;[hh, mm, ss] = str.split(':').map(Number)
-            }
-
-            if (isNaN(hh) || isNaN(mm)) return null
-            const d = new Date()
-            d.setHours(hh, mm, ss || 0, 0)
-            return d
-          }
-
           const salida = parsearHora(r.ida_al_descanso)
           if (!salida) return
 
           const vuelta = parsearHora(r.vuelta_al_descanso)
-
           if (vuelta) {
-            // Registro completo → va al historial
             const segundosTomados = diffSegundos(salida, vuelta)
             const enTolerancia = segundosTomados > SEGS_DESCANSO && segundosTomados <= SEGS_LIMITE
             const excedido = segundosTomados > SEGS_LIMITE
             nuevoHistorial.push({
-              nombre:         r.nombre   || '',
-              apellido:       r.apellido || '',
-              dni:            r.dni      || '',
-              cuil:           r.cuil     || '',
-              salida,
-              vuelta,
-              segundosTomados,
-              enTolerancia,
-              excedido,
+              nombre: r.nombre || '',
+              apellido: r.apellido || '',
+              dni: r.dni || '',
+              cuil: r.cuil || '',
+              salida, vuelta, segundosTomados, enTolerancia, excedido,
             })
           } else {
-            // Sin vuelta → todavía en descanso
+            // Rehidratar descanso activo si el DNI está autorizado
+            if (!dnisAutorizadosHoy.includes(String(r.dni).trim())) return
             nuevosDescansos[r.dni] = {
-              nombre:   r.nombre   || '',
+              nombre: r.nombre || '',
               apellido: r.apellido || '',
-              dni:      r.dni      || '',
-              cuil:     r.cuil     || '',
+              dni: r.dni || '',
+              cuil: r.cuil || '',
               salida,
             }
           }
         })
 
-        // Ordenar historial más reciente primero
         nuevoHistorial.sort((a, b) => b.vuelta - a.vuelta)
         setHistorial(nuevoHistorial)
         setDescansos(nuevosDescansos)
       })
-      .catch((err) => console.error('Error al cargar registros iniciales:', err))
+      .catch((err) => console.error('Error al cargar datos iniciales:', err))
       .finally(() => setCargando(false))
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -565,17 +549,26 @@ export default function App() {
       return
     }
 
+    // ── Bloqueo de autorización: solo pueden salir los autorizados por el supervisor ──
+    const estaActivo = descansos[datos.dni] // si ya está en descanso, lo dejamos volver sin check
+    if (!estaActivo && autorizados !== null && !autorizados.includes(String(datos.dni).trim())) {
+      setError(
+        `${datos.apellido} ${datos.nombre} no está autorizado para salir al descanso. ` +
+        `Un supervisor debe autorizarlo primero.`
+      )
+      setEsperando(true)
+      return
+    }
+
     // ── Leer el estado actual ANTES de mutar para decidir la acción ─────────
     const existente = descansos[datos.dni]
-
     if (!existente) {
-      // ── SALIDA ──────────────────────────────────────────────────────────
+      // ── SALIDA ────────────────────────────────────────────────────────────
       const nuevo = { ...datos, salida: ahora }
       setDescansos((prev) => ({ ...prev, [datos.dni]: nuevo }))
       setFlash({ tipo: 'salida', datos: nuevo })
       setEsperando(false)
 
-      // Llamada a Sheets fuera del setter: se ejecuta exactamente una vez
       setSyncStatus('syncing')
       registrarSalidaEnSheet(nuevo)
         .then((res) => {
@@ -808,6 +801,9 @@ export default function App() {
           {syncStatus === 'error' && (
             <div className="sync-badge sync-error">⚠️ Error al guardar en Sheets</div>
           )}
+          <button className="nav-item" style={{ marginTop: '0.75rem', color: 'rgba(255,255,255,0.45)', fontSize: '0.78rem' }} onClick={onCambiarRol}>
+            ← Cambiar rol
+          </button>
         </div>
       </aside>
 

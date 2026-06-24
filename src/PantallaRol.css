@@ -1,0 +1,198 @@
+/* ─── Pantalla de selección de rol ───────────────────────────────────────── */
+.rol-screen {
+  min-height: 100vh;
+  background: #f0f4f8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.rol-container {
+  background: #fff;
+  border-radius: 16px;
+  padding: 3rem 2.5rem;
+  width: 100%;
+  max-width: 520px;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.10);
+  text-align: center;
+}
+
+.rol-logo {
+  width: 160px;
+  height: auto;
+  margin-bottom: 1.5rem;
+  object-fit: contain;
+}
+
+.rol-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 0.4rem;
+}
+
+.rol-sub {
+  font-size: 0.9rem;
+  color: #64748b;
+  margin-bottom: 2.5rem;
+}
+
+.rol-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.rol-card {
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 2rem 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.rol-card:hover {
+  border-color: #00AEEF;
+  background: #e0f7ff;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(0, 174, 239, 0.15);
+}
+
+.rol-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.rol-card-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.rol-card-desc {
+  font-size: 0.78rem;
+  color: #64748b;
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* ─── Modal de clave ─────────────────────────────────────────────────────── */
+.clave-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+.clave-modal {
+  background: #fff;
+  border-radius: 14px;
+  padding: 2rem;
+  width: 90%;
+  max-width: 360px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  animation: slideUp 0.25s ease;
+}
+
+.clave-modal h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 0.4rem;
+}
+
+.clave-modal p {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin-bottom: 1.25rem;
+}
+
+.clave-modal input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1rem;
+  color: #0f172a;
+  background: #fff;
+  margin-bottom: 0.5rem;
+  accent-color: #00AEEF;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.clave-modal input:focus {
+  border-color: #00AEEF;
+  box-shadow: 0 0 0 3px rgba(0,174,239,0.1);
+}
+
+.clave-modal input.input-error {
+  border-color: #ef4444;
+}
+
+.clave-error {
+  display: block;
+  font-size: 0.8rem;
+  color: #ef4444;
+  margin-bottom: 1rem;
+}
+
+.clave-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.btn-cancel {
+  flex: 1;
+  padding: 0.65rem;
+  background: #e2e8f0;
+  color: #0f172a;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-cancel:hover { background: #cbd5e1; }
+
+.btn-confirmar {
+  flex: 1;
+  padding: 0.65rem;
+  background: #00AEEF;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-confirmar:hover {
+  background: #0090c8;
+  transform: translateY(-1px);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}

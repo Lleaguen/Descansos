@@ -9,3 +9,9 @@ body {
   background: #f0f4f8;
   min-height: 100vh;
 }
+
+/* Eliminar el color violeta del browser en inputs y controles nativos */
+:root {
+  accent-color: #00AEEF;
+  color-scheme: light;
+}

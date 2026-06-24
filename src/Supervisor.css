@@ -1,0 +1,407 @@
+/* ─── Supervisor screen ───────────────────────────────────────────────────── */
+.sv-screen {
+  min-height: 100vh;
+  background: #f0f4f8;
+  display: flex;
+  flex-direction: column;
+}
+
+.sv-header {
+  background: #0d1b2a;
+  padding: 1rem 2rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.sv-logo {
+  width: 120px;
+  height: auto;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+
+.sv-header-center {
+  flex: 1;
+}
+
+.sv-header-center h1 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.sv-header-center p {
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.55);
+  margin-top: 0.15rem;
+}
+
+.sv-btn-rol {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.8);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.sv-btn-rol:hover {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+}
+
+.sv-main {
+  max-width: 720px;
+  width: 100%;
+  margin: 2rem auto;
+  padding: 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ─── Scanner bar ─────────────────────────────────────────────────────────── */
+.sv-scanner-bar {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.88rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.sv-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #00AEEF;
+  flex-shrink: 0;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.4); }
+}
+
+.sv-sync {
+  margin-left: auto;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+}
+
+.sv-sync.syncing { background: #e0f7ff; color: #00AEEF; }
+.sv-sync.ok { background: #dcfce7; color: #16a34a; }
+.sv-sync.err { background: #fee2e2; color: #dc2626; }
+
+/* ─── Error ───────────────────────────────────────────────────────────────── */
+.sv-error {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 10px;
+  padding: 0.85rem 1.25rem;
+  color: #991b1b;
+  font-size: 0.88rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sv-error button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 1rem;
+}
+
+/* ─── Flash ───────────────────────────────────────────────────────────────── */
+.sv-flash {
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  animation: slideDown 0.25s ease;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.sv-flash-icon { font-size: 1.8rem; }
+
+.sv-flash-nombre {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #14532d;
+}
+
+.sv-flash-dni {
+  font-size: 0.82rem;
+  color: #16a34a;
+  margin-top: 0.15rem;
+}
+
+/* ─── Sección lista ───────────────────────────────────────────────────────── */
+.sv-section {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.sv-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.sv-section-header h2 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sv-count {
+  background: #e0f7ff;
+  color: #00AEEF;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
+.sv-btn-add {
+  background: #00AEEF;
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sv-btn-add:hover {
+  background: #0090c8;
+  transform: translateY(-1px);
+}
+
+/* ─── Empty ───────────────────────────────────────────────────────────────── */
+.sv-empty {
+  padding: 3.5rem 2rem;
+  text-align: center;
+  color: #94a3b8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.88rem;
+}
+
+.sv-empty-icon { font-size: 2.8rem; margin-bottom: 0.5rem; }
+
+/* ─── Lista ───────────────────────────────────────────────────────────────── */
+.sv-lista {
+  display: flex;
+  flex-direction: column;
+}
+
+.sv-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.1s;
+}
+
+.sv-item:last-child { border-bottom: none; }
+.sv-item:hover { background: #f8fafc; }
+
+.sv-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #e0f7ff;
+  color: #00AEEF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.sv-item-info { flex: 1; }
+
+.sv-item-nombre {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #0f172a;
+}
+
+.sv-item-dni {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.1rem;
+}
+
+.sv-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: #dcfce7;
+  color: #16a34a;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+}
+
+/* ─── Modal ───────────────────────────────────────────────────────────────── */
+.sv-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.sv-modal {
+  background: #fff;
+  border-radius: 14px;
+  width: 90%;
+  max-width: 460px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  animation: slideUp 0.25s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.sv-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.sv-modal-header h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.sv-modal-header button {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  color: #94a3b8;
+  cursor: pointer;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.sv-modal-header button:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.sv-modal form {
+  padding: 1.5rem;
+}
+
+.sv-form-group {
+  margin-bottom: 1.1rem;
+}
+
+.sv-form-group label {
+  display: block;
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 0.4rem;
+}
+
+.sv-form-group input {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.93rem;
+  color: #0f172a;
+  background: #fff;
+  outline: none;
+  accent-color: #00AEEF;
+  transition: border-color 0.15s;
+}
+
+.sv-form-group input:focus {
+  border-color: #00AEEF;
+  box-shadow: 0 0 0 3px rgba(0,174,239,0.1);
+}
+
+.sv-modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+/* Reusar .btn-cancel y .btn-confirmar de PantallaRol.css */
+.sv-modal-actions .btn-cancel,
+.sv-modal-actions .btn-confirmar {
+  flex: 1;
+  padding: 0.65rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sv-modal-actions .btn-cancel {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.sv-modal-actions .btn-cancel:hover { background: #cbd5e1; }
+
+.sv-modal-actions .btn-confirmar {
+  background: #00AEEF;
+  color: #fff;
+}
+
+.sv-modal-actions .btn-confirmar:hover { background: #0090c8; }

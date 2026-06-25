@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend,
@@ -321,6 +321,99 @@ function exportarExcel(excedidos) {
   XLSX.writeFile(wb, `excedidos_${fecha}.xlsx`)
 }
 
+// ─── Filtro tipo Excel por columna ────────────────────────────────────────────
+function ColFilterHeader({ label, values, selected, onChange }) {
+  const [open, setOpen]       = useState(false)
+  const [search, setSearch]   = useState('')
+  const ref = useRef(null)
+
+  // Cerrar al hacer click fuera
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const filtered = search.trim()
+    ? values.filter(v => v.toLowerCase().includes(search.toLowerCase()))
+    : values
+
+  const allSelected   = values.every(v => selected.has(v))
+  const noneSelected  = selected.size === 0
+  const someSelected  = !allSelected && !noneSelected
+  const isActive      = !allSelected // hay filtro activo si no están todos seleccionados
+
+  const toggleAll = () => {
+    if (allSelected) onChange(new Set())       // deseleccionar todo
+    else             onChange(new Set(values)) // seleccionar todo
+  }
+
+  const toggleOne = (v) => {
+    const next = new Set(selected)
+    next.has(v) ? next.delete(v) : next.add(v)
+    onChange(next)
+  }
+
+  return (
+    <th ref={ref} className="th-filter" style={{ position: 'relative', userSelect: 'none' }}>
+      <button
+        className={`th-filter-btn ${isActive ? 'th-filter-active' : ''}`}
+        onClick={() => setOpen(o => !o)}
+        title={isActive ? 'Filtro activo' : 'Filtrar'}
+      >
+        <span className="th-label">{label}</span>
+        <span className={`th-funnel ${isActive ? 'funnel-active' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="col-dropdown">
+          <div className="col-dropdown-search">
+            <input
+              autoFocus
+              type="text"
+              placeholder="Buscar valor..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
+          <div className="col-dropdown-list">
+            {/* Seleccionar todo */}
+            <label className="col-dd-item col-dd-all">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                ref={el => { if (el) el.indeterminate = someSelected }}
+                onChange={toggleAll}
+              />
+              <span>(Seleccionar todo)</span>
+            </label>
+            {filtered.length === 0 && (
+              <div className="col-dd-empty">Sin resultados</div>
+            )}
+            {filtered.map(v => (
+              <label key={v} className="col-dd-item">
+                <input
+                  type="checkbox"
+                  checked={selected.has(v)}
+                  onChange={() => toggleOne(v)}
+                />
+                <span>{v}</span>
+              </label>
+            ))}
+          </div>
+          <div className="col-dropdown-footer">
+            <span className="col-dd-selected-count">
+              {selected.size} de {values.length} seleccionados
+            </span>
+            <button className="col-dd-btn-ok" onClick={() => setOpen(false)}>Aceptar</button>
+          </div>
+        </div>
+      )}
+    </th>
+  )
+}
+
 // ─── KPI Card ──────────────────────────────────────────────────────────────
 function KpiCard({ icon, label, value, sub, color }) {
   return (
@@ -480,18 +573,28 @@ export default function App({ onCambiarRol }) {
           console.log('[Sheets] Fecha normalizada:', normFecha(registros[0].fecha), '| Hoy:', hoy)
         }
 
-        const deHoy = registros.filter((r) => normFecha(r.fecha) === hoy)
-        console.log(`[Sheets] Total registros: ${registros.length} | Del día: ${deHoy.length}`)
+        console.log(`[Sheets] Total registros: ${registros.length}`)
 
         const nuevoHistorial = []
         const nuevosDescansos = {}
 
-        deHoy.forEach((r) => {
+        registros.forEach((r) => {
           const salida = parsearHora(r.ida_al_descanso)
           if (!salida) return
 
+          // Reconstruir la fecha correcta en el objeto Date para registros históricos
+          const fechaStr = normFecha(r.fecha) // "D/M/YYYY"
+          if (fechaStr) {
+            const [d, m, y] = fechaStr.split('/').map(Number)
+            salida.setFullYear(y, m - 1, d)
+          }
+
           const vuelta = parsearHora(r.vuelta_al_descanso)
           if (vuelta) {
+            if (fechaStr) {
+              const [d, m, y] = fechaStr.split('/').map(Number)
+              vuelta.setFullYear(y, m - 1, d)
+            }
             const segundosTomados = diffSegundos(salida, vuelta)
             const enTolerancia = segundosTomados > SEGS_DESCANSO && segundosTomados <= SEGS_LIMITE
             const excedido = segundosTomados > SEGS_LIMITE
@@ -502,8 +605,8 @@ export default function App({ onCambiarRol }) {
               cuil: r.cuil || '',
               salida, vuelta, segundosTomados, enTolerancia, excedido,
             })
-          } else {
-            // Rehidratar descanso activo (no requiere autorización para mostrarlo)
+          } else if (normFecha(r.fecha) === hoy) {
+            // Solo rehidratar descansos activos del día de hoy
             nuevosDescansos[r.dni] = {
               nombre: r.nombre || '',
               apellido: r.apellido || '',
@@ -838,7 +941,7 @@ export default function App({ onCambiarRol }) {
   // Top 5 para dashboard
   const topExcedidos = listaExcedidos.slice(0, 5)
 
-  // ─── Filtros de búsqueda ────────────────────────────────────────────────────
+  // ─── Filtros de búsqueda (activos: texto libre) ───────────────────────────
   const filtrar = (lista, q) => {
     if (!q.trim()) return lista
     const t = q.toLowerCase().trim()
@@ -848,9 +951,134 @@ export default function App({ onCambiarRol }) {
       String(h.dni).includes(t)
     )
   }
-  const activosFiltrados   = filtrar(activosArray, busquedaActivos)
-  const historialFiltrado  = filtrar(historial, busquedaHistorial)
-  const excedidosFiltrados = filtrar(listaExcedidos, busquedaExcedidos)
+  const activosFiltrados = filtrar(activosArray, busquedaActivos)
+
+  // ─── Helpers para extraer valores únicos ────────────────────────────────────
+  const uniq = arr => [...new Set(arr)].sort()
+
+  // ─── Filtros Excel: Historial ────────────────────────────────────────────────
+  // Valores únicos por columna (sobre la lista completa)
+  const hVals = {
+    fecha:    uniq(historial.map(h => formatFecha(h.vuelta))),
+    persona:  uniq(historial.map(h => `${h.apellido} ${h.nombre}`.trim())),
+    dni:      uniq(historial.map(h => String(h.dni))),
+    salida:   uniq(historial.map(h => formatHora(h.salida).slice(0,5))),
+    vuelta:   uniq(historial.map(h => formatHora(h.vuelta).slice(0,5))),
+    estado:   ['✅ OK', '🟡 Tolerancia', '⚠️ Excedido'],
+  }
+
+  // Estado: Set de valores seleccionados (vacío = todos)
+  const mkFull = (vals) => new Set(vals)
+  const [fhFecha,   setFhFecha]   = useState(() => mkFull(hVals.fecha))
+  const [fhPersona, setFhPersona] = useState(() => mkFull(hVals.persona))
+  const [fhDni,     setFhDni]     = useState(() => mkFull(hVals.dni))
+  const [fhSalida,  setFhSalida]  = useState(() => mkFull(hVals.salida))
+  const [fhVuelta,  setFhVuelta]  = useState(() => mkFull(hVals.vuelta))
+  const [fhEstado,  setFhEstado]  = useState(() => mkFull(hVals.estado))
+
+  // Cuando llegan nuevos datos, expandir los Sets para incluir nuevos valores
+  useEffect(() => {
+    setFhFecha  (prev => mkFull([...new Set([...prev, ...hVals.fecha])]))
+    setFhPersona(prev => mkFull([...new Set([...prev, ...hVals.persona])]))
+    setFhDni    (prev => mkFull([...new Set([...prev, ...hVals.dni])]))
+    setFhSalida (prev => mkFull([...new Set([...prev, ...hVals.salida])]))
+    setFhVuelta (prev => mkFull([...new Set([...prev, ...hVals.vuelta])]))
+  }, [historial.length])
+
+  const resetFiltrosHistorial = () => {
+    setFhFecha  (mkFull(hVals.fecha))
+    setFhPersona(mkFull(hVals.persona))
+    setFhDni    (mkFull(hVals.dni))
+    setFhSalida (mkFull(hVals.salida))
+    setFhVuelta (mkFull(hVals.vuelta))
+    setFhEstado (mkFull(hVals.estado))
+  }
+
+  const getEstadoLabel = (h) => h.excedido ? '⚠️ Excedido' : h.enTolerancia ? '🟡 Tolerancia' : '✅ OK'
+
+  const historialFiltrado = historial.filter(h => {
+    if (fhFecha.size   < hVals.fecha.length   && !fhFecha.has(formatFecha(h.vuelta)))                                  return false
+    if (fhPersona.size < hVals.persona.length && !fhPersona.has(`${h.apellido} ${h.nombre}`.trim()))                   return false
+    if (fhDni.size     < hVals.dni.length     && !fhDni.has(String(h.dni)))                                            return false
+    if (fhSalida.size  < hVals.salida.length  && !fhSalida.has(formatHora(h.salida).slice(0,5)))                       return false
+    if (fhVuelta.size  < hVals.vuelta.length  && !fhVuelta.has(formatHora(h.vuelta).slice(0,5)))                       return false
+    if (fhEstado.size  < hVals.estado.length  && !fhEstado.has(getEstadoLabel(h)))                                     return false
+    return true
+  })
+
+  const hayFiltrosHistorial = (
+    fhFecha.size   < hVals.fecha.length   ||
+    fhPersona.size < hVals.persona.length ||
+    fhDni.size     < hVals.dni.length     ||
+    fhSalida.size  < hVals.salida.length  ||
+    fhVuelta.size  < hVals.vuelta.length  ||
+    fhEstado.size  < hVals.estado.length
+  )
+
+  // ─── Filtros Excel: Excedidos ──────────────────────────────────────────────
+  const eVals = {
+    fecha:    uniq(listaExcedidos.map(h => formatFecha(h.vuelta))),
+    apellido: uniq(listaExcedidos.map(h => h.apellido || '')),
+    nombre:   uniq(listaExcedidos.map(h => h.nombre   || '')),
+    dni:      uniq(listaExcedidos.map(h => String(h.dni))),
+    cuil:     uniq(listaExcedidos.map(h => h.cuil || '—')),
+    salida:   uniq(listaExcedidos.map(h => formatHora(h.salida).slice(0,5))),
+    vuelta:   uniq(listaExcedidos.map(h => formatHora(h.vuelta).slice(0,5))),
+    estado:   ['🟡 Tolerancia', '⚠️ Excedido'],
+  }
+
+  const [feApellido, setFeApellido] = useState(() => mkFull(eVals.apellido))
+  const [feNombre,   setFeNombre]   = useState(() => mkFull(eVals.nombre))
+  const [feDni,      setFeDni]      = useState(() => mkFull(eVals.dni))
+  const [feCuil,     setFeCuil]     = useState(() => mkFull(eVals.cuil))
+  const [feFecha,    setFeFecha]    = useState(() => mkFull(eVals.fecha))
+  const [feSalida,   setFeSalida]   = useState(() => mkFull(eVals.salida))
+  const [feVuelta,   setFeVuelta]   = useState(() => mkFull(eVals.vuelta))
+  const [feEstado,   setFeEstado]   = useState(() => mkFull(eVals.estado))
+
+  useEffect(() => {
+    setFeApellido(prev => mkFull([...new Set([...prev, ...eVals.apellido])]))
+    setFeNombre  (prev => mkFull([...new Set([...prev, ...eVals.nombre])]))
+    setFeDni     (prev => mkFull([...new Set([...prev, ...eVals.dni])]))
+    setFeCuil    (prev => mkFull([...new Set([...prev, ...eVals.cuil])]))
+    setFeFecha   (prev => mkFull([...new Set([...prev, ...eVals.fecha])]))
+    setFeSalida  (prev => mkFull([...new Set([...prev, ...eVals.salida])]))
+    setFeVuelta  (prev => mkFull([...new Set([...prev, ...eVals.vuelta])]))
+  }, [listaExcedidos.length])
+
+  const resetFiltrosExcedidos = () => {
+    setFeApellido(mkFull(eVals.apellido))
+    setFeNombre  (mkFull(eVals.nombre))
+    setFeDni     (mkFull(eVals.dni))
+    setFeCuil    (mkFull(eVals.cuil))
+    setFeFecha   (mkFull(eVals.fecha))
+    setFeSalida  (mkFull(eVals.salida))
+    setFeVuelta  (mkFull(eVals.vuelta))
+    setFeEstado  (mkFull(eVals.estado))
+  }
+
+  const excedidosFiltrados = listaExcedidos.filter(h => {
+    if (feFecha.size    < eVals.fecha.length    && !feFecha.has(formatFecha(h.vuelta)))                       return false
+    if (feApellido.size < eVals.apellido.length && !feApellido.has(h.apellido || ''))                         return false
+    if (feNombre.size   < eVals.nombre.length   && !feNombre.has(h.nombre     || ''))                         return false
+    if (feDni.size      < eVals.dni.length      && !feDni.has(String(h.dni)))                                 return false
+    if (feCuil.size     < eVals.cuil.length     && !feCuil.has(h.cuil || '—'))                               return false
+    if (feSalida.size   < eVals.salida.length   && !feSalida.has(formatHora(h.salida).slice(0,5)))            return false
+    if (feVuelta.size   < eVals.vuelta.length   && !feVuelta.has(formatHora(h.vuelta).slice(0,5)))            return false
+    if (feEstado.size   < eVals.estado.length   && !feEstado.has(getEstadoLabel(h)))                          return false
+    return true
+  })
+
+  const hayFiltrosExcedidos = (
+    feFecha.size    < eVals.fecha.length    ||
+    feApellido.size < eVals.apellido.length ||
+    feNombre.size   < eVals.nombre.length   ||
+    feDni.size      < eVals.dni.length      ||
+    feCuil.size     < eVals.cuil.length     ||
+    feSalida.size   < eVals.salida.length   ||
+    feVuelta.size   < eVals.vuelta.length   ||
+    feEstado.size   < eVals.estado.length
+  )
 
   return (
     <div className="dashboard">
@@ -1126,39 +1354,47 @@ export default function App({ onCambiarRol }) {
           <section className="section-card">
             <div className="section-header">
               <h2 className="section-title">
-                <span className="section-dot" style={{ background: COLOR_PRIMARY }} />Historial del día
+                <span className="section-dot" style={{ background: COLOR_PRIMARY }} />Historial completo
               </h2>
-              <span className="section-badge" style={{ background: `${COLOR_PRIMARY}22`, color: COLOR_PRIMARY }}>
-                {historialFiltrado.length}{busquedaHistorial ? ` de ${historial.length}` : ''} registro{historial.length !== 1 ? 's' : ''}
-              </span>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <span className="section-badge" style={{ background: `${COLOR_PRIMARY}22`, color: COLOR_PRIMARY }}>
+                  {historialFiltrado.length}{hayFiltrosHistorial ? ` de ${historial.length}` : ''} registro{historial.length !== 1 ? 's' : ''}
+                </span>
+                {hayFiltrosHistorial && (
+                  <button className="btn-clear-filters" onClick={resetFiltrosHistorial} title="Limpiar filtros">
+                    ✕ Limpiar filtros
+                  </button>
+                )}
+              </div>
             </div>
-            <input
-              className="search-input"
-              type="search"
-              placeholder="Buscar por nombre, apellido o DNI..."
-              value={busquedaHistorial}
-              onChange={(e) => setBusquedaHistorial(e.target.value)}
-            />
             {historial.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon">📋</div>
                 <div className="empty-title">Sin registros aún</div>
                 <div className="empty-sub">Los descansos completados aparecerán aquí</div>
               </div>
-            ) : historialFiltrado.length === 0 ? (
-              <div className="search-empty">Sin resultados para "{busquedaHistorial}"</div>
             ) : (
               <div className="table-wrap">
                 <table className="tabla">
                   <thead>
                     <tr>
-                      <th>#</th><th>Persona</th><th>DNI</th><th>Salida</th><th>Vuelta</th><th>Duración</th><th>Estado</th>
+                      <th>#</th>
+                      <ColFilterHeader label="Fecha"    values={hVals.fecha}   selected={fhFecha}   onChange={setFhFecha} />
+                      <ColFilterHeader label="Persona"  values={hVals.persona} selected={fhPersona} onChange={setFhPersona} />
+                      <ColFilterHeader label="DNI"      values={hVals.dni}     selected={fhDni}     onChange={setFhDni} />
+                      <ColFilterHeader label="Salida"   values={hVals.salida}  selected={fhSalida}  onChange={setFhSalida} />
+                      <ColFilterHeader label="Vuelta"   values={hVals.vuelta}  selected={fhVuelta}  onChange={setFhVuelta} />
+                      <th>Duración</th>
+                      <ColFilterHeader label="Estado"   values={hVals.estado}  selected={fhEstado}  onChange={setFhEstado} />
                     </tr>
                   </thead>
                   <tbody>
-                    {historialFiltrado.map((h, i) => (
+                    {historialFiltrado.length === 0 ? (
+                      <tr><td colSpan={8} className="td-empty">Sin resultados para los filtros aplicados</td></tr>
+                    ) : historialFiltrado.map((h, i) => (
                       <tr key={i} className={h.excedido ? 'tr-excedido' : h.enTolerancia ? 'tr-tolerancia' : ''}>
                         <td className="td-num">{historialFiltrado.length - i}</td>
+                        <td>{formatFecha(h.vuelta)}</td>
                         <td className="td-persona">
                           <div className="tabla-avatar" style={{
                             background: h.excedido ? '#fee2e2' : h.enTolerancia ? '#fef9c3' : '#e0f7ff',
@@ -1195,49 +1431,49 @@ export default function App({ onCambiarRol }) {
               <h2 className="section-title">
                 <span className="section-dot" style={{ background: COLOR_EXCEDIDO }} />Registro de excedidos y tolerancia
               </h2>
-              <button
-                className="btn-export"
-                onClick={() => exportarExcel(listaExcedidos)}
-                disabled={listaExcedidos.length === 0}
-              >
-                📥 Exportar Excel
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                {hayFiltrosExcedidos && (
+                  <button className="btn-clear-filters" onClick={resetFiltrosExcedidos} title="Limpiar filtros">
+                    ✕ Limpiar filtros
+                  </button>
+                )}
+                <button
+                  className="btn-export"
+                  onClick={() => exportarExcel(excedidosFiltrados)}
+                  disabled={excedidosFiltrados.length === 0}
+                >
+                  📥 Exportar Excel
+                </button>
+              </div>
             </div>
-            <input
-              className="search-input"
-              type="search"
-              placeholder="Buscar por nombre, apellido o DNI..."
-              value={busquedaExcedidos}
-              onChange={(e) => setBusquedaExcedidos(e.target.value)}
-            />
             {listaExcedidos.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon">✅</div>
                 <div className="empty-title">Sin excedidos aún</div>
                 <div className="empty-sub">Todos los descansos están dentro del tiempo permitido</div>
               </div>
-            ) : excedidosFiltrados.length === 0 ? (
-              <div className="search-empty">Sin resultados para "{busquedaExcedidos}"</div>
             ) : (
               <div className="table-wrap">
                 <table className="tabla">
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>Fecha</th>
-                      <th>Apellido</th>
-                      <th>Nombre</th>
-                      <th>DNI</th>
-                      <th>CUIL</th>
-                      <th>H. Salida</th>
-                      <th>H. Vuelta</th>
+                      <ColFilterHeader label="Fecha"     values={eVals.fecha}    selected={feFecha}    onChange={setFeFecha} />
+                      <ColFilterHeader label="Apellido"  values={eVals.apellido} selected={feApellido} onChange={setFeApellido} />
+                      <ColFilterHeader label="Nombre"    values={eVals.nombre}   selected={feNombre}   onChange={setFeNombre} />
+                      <ColFilterHeader label="DNI"       values={eVals.dni}      selected={feDni}      onChange={setFeDni} />
+                      <ColFilterHeader label="CUIL"      values={eVals.cuil}     selected={feCuil}     onChange={setFeCuil} />
+                      <ColFilterHeader label="H. Salida" values={eVals.salida}   selected={feSalida}   onChange={setFeSalida} />
+                      <ColFilterHeader label="H. Vuelta" values={eVals.vuelta}   selected={feVuelta}   onChange={setFeVuelta} />
                       <th>Duración</th>
                       <th>Se pasó</th>
-                      <th>Estado</th>
+                      <ColFilterHeader label="Estado"    values={eVals.estado}   selected={feEstado}   onChange={setFeEstado} />
                     </tr>
                   </thead>
                   <tbody>
-                    {excedidosFiltrados.map((h, i) => (
+                    {excedidosFiltrados.length === 0 ? (
+                      <tr><td colSpan={11} className="td-empty">Sin resultados para los filtros aplicados</td></tr>
+                    ) : excedidosFiltrados.map((h, i) => (
                       <tr key={i} className={h.excedido ? 'tr-excedido' : 'tr-tolerancia'}>
                         <td className="td-num">{i + 1}</td>
                         <td>{formatFecha(h.vuelta)}</td>

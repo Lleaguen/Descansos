@@ -421,6 +421,8 @@ export default function App({ onCambiarRol }) {
   const [formData, setFormData] = useState({ nombre: '', apellido: '', dni: '', cuil: '' })
   // autorizados: null = cargando | array de strings de DNI del día
   const [autorizados, setAutorizados] = useState(null)
+  // Ref para que procesarScan siempre lea el valor más reciente sin depender del closure
+  const autorizadosRef = useRef(null)
 
   // ─── Rehidratar estado desde Google Sheets al montar ──────────────────────
   useEffect(() => {
@@ -467,6 +469,7 @@ export default function App({ onCambiarRol }) {
         // Autorizados: lista de DNI strings
         const listaAutorizados = Array.isArray(autorizadosData) ? autorizadosData : []
         const dnisAutorizadosHoy = listaAutorizados.map((a) => String(a.dni).trim())
+        autorizadosRef.current = dnisAutorizadosHoy
         setAutorizados(dnisAutorizadosHoy)
 
         if (!Array.isArray(registros)) return
@@ -521,6 +524,24 @@ export default function App({ onCambiarRol }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // ─── Polling: refrescar autorizados cada 15 segundos ─────────────────────
+  // Resuelve el problema de que el supervisor autoriza DESPUÉS de que IMPLANT
+  // cargó la página: sin polling, el DNI no aparece en la lista local y el
+  // sistema lo rechaza hasta que se recarga manualmente.
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      obtenerAutorizados()
+        .then((data) => {
+          if (Array.isArray(data)) {
+            const dnisActualizados = data.map((a) => String(a.dni).trim())
+            setAutorizados(dnisActualizados)
+          }
+        })
+        .catch(() => {}) // fallo silencioso, no interrumpir la operación
+    }, 5000) // cada 5 segundos
+    return () => clearInterval(intervalo)
+  }, [])
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Enter') {
@@ -572,77 +593,100 @@ export default function App({ onCambiarRol }) {
       return
     }
 
-    // ── Bloqueo de autorización: solo pueden salir los autorizados por el supervisor ──
+    // ── Bloqueo de autorización: fetch fresco para evitar problemas de caché/closure ──
     const estaActivo = descansos[datos.dni] // si ya está en descanso, lo dejamos volver sin check
-    if (!estaActivo && autorizados !== null && !autorizados.includes(String(datos.dni).trim())) {
-      setError(
-        `${datos.apellido} ${datos.nombre} no está autorizado para salir al descanso. ` +
-        `Un supervisor debe autorizarlo primero.`
-      )
-      setEsperando(true)
+    if (!estaActivo) {
+      obtenerAutorizados().then((dataFresca) => {
+        const listaFresca = Array.isArray(dataFresca) ? dataFresca.map((a) => String(a.dni).trim()) : []
+        autorizadosRef.current = listaFresca
+        setAutorizados(listaFresca)
+        if (!listaFresca.includes(String(datos.dni).trim())) {
+          setError(
+            `${datos.apellido} ${datos.nombre} no está autorizado para salir al descanso. ` +
+            `Un supervisor debe autorizarlo primero.`
+          )
+          setEsperando(true)
+          return
+        }
+        procesarSalida(datos, ahora)
+      }).catch(() => {
+        // Si falla el fetch, usar la lista en memoria como fallback
+        if (autorizadosRef.current !== null && !autorizadosRef.current.includes(String(datos.dni).trim())) {
+          setError(
+            `${datos.apellido} ${datos.nombre} no está autorizado para salir al descanso. ` +
+            `Un supervisor debe autorizarlo primero.`
+          )
+          setEsperando(true)
+          return
+        }
+        procesarSalida(datos, ahora)
+      })
       return
     }
 
-    // ── Leer el estado actual ANTES de mutar para decidir la acción ─────────
-    const existente = descansos[datos.dni]
-    if (!existente) {
-      // ── SALIDA ────────────────────────────────────────────────────────────
-      const nuevo = { ...datos, salida: ahora }
-      setDescansos((prev) => ({ ...prev, [datos.dni]: nuevo }))
-      setFlash({ tipo: 'salida', datos: nuevo })
-      setEsperando(false)
+    // Si ya está activo (vuelta), procesar directamente
+    procesarVuelta(datos, ahora)
+  }
 
-      setSyncStatus('syncing')
-      registrarSalidaEnSheet(nuevo)
-        .then((res) => {
-          if (res?.estatus === 'ERROR' || res?.error) {
-            console.error('Sheets: error al registrar salida', res)
-            setSyncStatus('error')
-          } else {
-            setSyncStatus('ok')
-          }
-        })
-        .catch((err) => {
-          console.error('Sheets: fallo de red en salida', err)
+  const procesarSalida = (datos, ahora) => {
+    const nuevo = { ...datos, salida: ahora }
+    setDescansos((prev) => ({ ...prev, [datos.dni]: nuevo }))
+    setFlash({ tipo: 'salida', datos: nuevo })
+    setEsperando(false)
+
+    setSyncStatus('syncing')
+    registrarSalidaEnSheet(nuevo)
+      .then((res) => {
+        if (res?.estatus === 'ERROR' || res?.error) {
+          console.error('Sheets: error al registrar salida', res)
           setSyncStatus('error')
-        })
-    } else {
-      // ── VUELTA ──────────────────────────────────────────────────────────
-      const segundosTomados = diffSegundos(existente.salida, ahora)
-      const enTolerancia = segundosTomados > SEGS_DESCANSO && segundosTomados <= SEGS_LIMITE
-      const excedido = segundosTomados > SEGS_LIMITE
-      const registro = { ...existente, vuelta: ahora, segundosTomados, enTolerancia, excedido }
-
-      setDescansos((prev) => {
-        const siguiente = { ...prev }
-        delete siguiente[datos.dni]
-        return siguiente
+        } else {
+          setSyncStatus('ok')
+        }
       })
-      setFlash({ tipo: 'vuelta', datos: registro })
-      setHistorial((h) => [registro, ...h])
-      setEsperando(false)
+      .catch((err) => {
+        console.error('Sheets: fallo de red en salida', err)
+        setSyncStatus('error')
+      })
+  }
 
-      // Llamada a Sheets fuera del setter: se ejecuta exactamente una vez
-      const textoExcedido = excedido
-        ? `Excedido +${formatDuracionSegundos(segundosTomados - SEGS_LIMITE)}`
-        : enTolerancia
-          ? `Tolerancia +${formatDuracionSegundos(segundosTomados - SEGS_DESCANSO)}`
-          : 'A tiempo'
-      setSyncStatus('syncing')
-      registrarVueltaEnSheet(datos.dni, textoExcedido)
-        .then((res) => {
-          if (res?.estatus === 'ERROR' || res?.error) {
-            console.error('Sheets: error al registrar vuelta', res)
-            setSyncStatus('error')
-          } else {
-            setSyncStatus('ok')
-          }
-        })
-        .catch((err) => {
-          console.error('Sheets: fallo de red en vuelta', err)
+  const procesarVuelta = (datos, ahora) => {
+    const existente = descansos[datos.dni]
+    if (!existente) return
+
+    const segundosTomados = diffSegundos(existente.salida, ahora)
+    const enTolerancia = segundosTomados > SEGS_DESCANSO && segundosTomados <= SEGS_LIMITE
+    const excedido = segundosTomados > SEGS_LIMITE
+    const registro = { ...existente, vuelta: ahora, segundosTomados, enTolerancia, excedido }
+
+    setDescansos((prev) => {
+      const siguiente = { ...prev }
+      delete siguiente[datos.dni]
+      return siguiente
+    })
+    setFlash({ tipo: 'vuelta', datos: registro })
+    setHistorial((h) => [registro, ...h])
+    setEsperando(false)
+
+    const textoExcedido = excedido
+      ? `Excedido +${formatDuracionSegundos(segundosTomados - SEGS_LIMITE)}`
+      : enTolerancia
+        ? `Tolerancia +${formatDuracionSegundos(segundosTomados - SEGS_DESCANSO)}`
+        : 'A tiempo'
+    setSyncStatus('syncing')
+    registrarVueltaEnSheet(datos.dni, textoExcedido)
+      .then((res) => {
+        if (res?.estatus === 'ERROR' || res?.error) {
+          console.error('Sheets: error al registrar vuelta', res)
           setSyncStatus('error')
-        })
-    }
+        } else {
+          setSyncStatus('ok')
+        }
+      })
+      .catch((err) => {
+        console.error('Sheets: fallo de red en vuelta', err)
+        setSyncStatus('error')
+      })
   }
 
   const cerrarFlash = () => { setFlash(null); setEsperando(true) }

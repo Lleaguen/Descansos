@@ -72,7 +72,9 @@ export async function obtenerRegistrosSheet() {
 // ─── GET: Lista de autorizados (hoja AUTORIZADOS) ─────────────────────────────
 export async function obtenerAutorizados() {
   try {
-    const response = await fetch(`${URL_API}?accion=obtenerAutorizados`)
+    const response = await fetch(`${URL_API}?accion=obtenerAutorizados&t=${Date.now()}`, {
+      cache: 'no-store'
+    })
     return await response.json()
   } catch (error) {
     console.error('Error de red al obtener autorizados:', error)

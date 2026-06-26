@@ -619,12 +619,17 @@ body {
   vertical-align: middle;
 }
 
+.th-filter-cell {
+  display: flex;
+  align-items: stretch;
+}
+
 .th-filter-btn {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  width: 100%;
-  padding: 0.65rem 0.9rem;
+  flex: 1;
+  padding: 0.65rem 0.6rem 0.65rem 0.9rem;
   background: none;
   border: none;
   cursor: pointer;
@@ -642,10 +647,10 @@ body {
 .th-label { flex: 1; text-align: left; }
 
 .th-funnel {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   flex-shrink: 0;
-  opacity: 0.35;
+  opacity: 0.3;
   transition: opacity 0.14s;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2364748b'%3E%3Cpath fill-rule='evenodd' d='M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L13 10.414V17a1 1 0 01-.553.894l-4-2A1 1 0 018 15V10.414L3.293 6.707A1 1 0 013 6V3z' clip-rule='evenodd'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -656,7 +661,45 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2300AEEF'%3E%3Cpath fill-rule='evenodd' d='M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L13 10.414V17a1 1 0 01-.553.894l-4-2A1 1 0 018 15V10.414L3.293 6.707A1 1 0 013 6V3z' clip-rule='evenodd'/%3E%3C/svg%3E");
 }
 
-/* ── Dropdown ── */
+/* ── Botón ordenamiento dentro del th-filter ── */
+.th-sort-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  border-left: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--muted);
+  transition: background 0.12s, color 0.12s;
+  padding: 0;
+}
+.th-sort-btn:hover { background: rgba(0,174,239,0.1); color: var(--primary-dark); }
+.th-sort-btn.th-sort-active { color: var(--primary); font-weight: 700; background: rgba(0,174,239,0.08); }
+.sort-idle { font-size: 0.65rem; opacity: 0.35; }
+
+/* ── th sortable sin filtro (Duración) ── */
+.th-sortable {
+  cursor: pointer;
+  padding: 0.65rem 0.9rem !important;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 700;
+  white-space: nowrap;
+  user-select: none;
+  transition: background 0.14s, color 0.14s;
+}
+.th-sortable:hover { background: rgba(0,174,239,0.07); color: var(--primary-dark); }
+.th-sortable > span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.th-sort-inline { font-size: 0.72rem; opacity: 0.3; transition: opacity 0.12s, color 0.12s; }
+.th-sort-inline.th-sort-active { opacity: 1; color: var(--primary); }
+
+
 .col-dropdown {
   position: absolute;
   top: calc(100% + 4px);
@@ -1244,3 +1287,5 @@ body {
   color: #9ca3af;
   font-size: 0.92rem;
 }
+
+/* ── Dropdown ── */

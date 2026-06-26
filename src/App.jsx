@@ -322,12 +322,12 @@ function exportarExcel(excedidos) {
 }
 
 // ─── Filtro tipo Excel por columna ────────────────────────────────────────────
-function ColFilterHeader({ label, values, selected, onChange }) {
-  const [open, setOpen]       = useState(false)
-  const [search, setSearch]   = useState('')
+// sortDir: null | 'asc' | 'desc'
+function ColFilterHeader({ label, values, selected, onChange, sortDir, onSort }) {
+  const [open, setOpen]     = useState(false)
+  const [search, setSearch] = useState('')
   const ref = useRef(null)
 
-  // Cerrar al hacer click fuera
   useEffect(() => {
     const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
     document.addEventListener('mousedown', handler)
@@ -338,32 +338,44 @@ function ColFilterHeader({ label, values, selected, onChange }) {
     ? values.filter(v => v.toLowerCase().includes(search.toLowerCase()))
     : values
 
-  const allSelected   = values.every(v => selected.has(v))
-  const noneSelected  = selected.size === 0
-  const someSelected  = !allSelected && !noneSelected
-  const isActive      = !allSelected // hay filtro activo si no están todos seleccionados
+  const allSelected  = values.every(v => selected.has(v))
+  const someSelected = !allSelected && values.some(v => selected.has(v))
+  const isActive     = !allSelected
 
-  const toggleAll = () => {
-    if (allSelected) onChange(new Set())       // deseleccionar todo
-    else             onChange(new Set(values)) // seleccionar todo
-  }
-
+  const toggleAll = () => onChange(allSelected ? new Set() : new Set(values))
   const toggleOne = (v) => {
     const next = new Set(selected)
     next.has(v) ? next.delete(v) : next.add(v)
     onChange(next)
   }
 
+  const sortIcon = sortDir === 'asc' ? '↑' : sortDir === 'desc' ? '↓' : null
+
   return (
     <th ref={ref} className="th-filter" style={{ position: 'relative', userSelect: 'none' }}>
-      <button
-        className={`th-filter-btn ${isActive ? 'th-filter-active' : ''}`}
-        onClick={() => setOpen(o => !o)}
-        title={isActive ? 'Filtro activo' : 'Filtrar'}
-      >
-        <span className="th-label">{label}</span>
-        <span className={`th-funnel ${isActive ? 'funnel-active' : ''}`} />
-      </button>
+      <div className="th-filter-cell">
+        {/* Área de filtro */}
+        <button
+          className={`th-filter-btn ${isActive ? 'th-filter-active' : ''}`}
+          onClick={() => setOpen(o => !o)}
+          title={isActive ? 'Filtro activo' : 'Filtrar'}
+        >
+          <span className="th-label">{label}</span>
+          <span className={`th-funnel ${isActive ? 'funnel-active' : ''}`} />
+        </button>
+        {/* Botón de ordenamiento */}
+        {onSort && (
+          <button
+            className={`th-sort-btn ${sortDir ? 'th-sort-active' : ''}`}
+            onClick={onSort}
+            title={sortDir === 'asc' ? 'Orden ascendente — click para descendente' : sortDir === 'desc' ? 'Orden descendente — click para quitar' : 'Ordenar'}
+          >
+            {sortDir === 'asc'  ? '↑' :
+             sortDir === 'desc' ? '↓' :
+             <span className="sort-idle">⇅</span>}
+          </button>
+        )}
+      </div>
 
       {open && (
         <div className="col-dropdown">
@@ -378,7 +390,6 @@ function ColFilterHeader({ label, values, selected, onChange }) {
             />
           </div>
           <div className="col-dropdown-list">
-            {/* Seleccionar todo */}
             <label className="col-dd-item col-dd-all">
               <input
                 type="checkbox"
@@ -388,24 +399,16 @@ function ColFilterHeader({ label, values, selected, onChange }) {
               />
               <span>(Seleccionar todo)</span>
             </label>
-            {filtered.length === 0 && (
-              <div className="col-dd-empty">Sin resultados</div>
-            )}
+            {filtered.length === 0 && <div className="col-dd-empty">Sin resultados</div>}
             {filtered.map(v => (
               <label key={v} className="col-dd-item">
-                <input
-                  type="checkbox"
-                  checked={selected.has(v)}
-                  onChange={() => toggleOne(v)}
-                />
+                <input type="checkbox" checked={selected.has(v)} onChange={() => toggleOne(v)} />
                 <span>{v}</span>
               </label>
             ))}
           </div>
           <div className="col-dropdown-footer">
-            <span className="col-dd-selected-count">
-              {selected.size} de {values.length} seleccionados
-            </span>
+            <span className="col-dd-selected-count">{selected.size} de {values.length} seleccionados</span>
             <button className="col-dd-btn-ok" onClick={() => setOpen(false)}>Aceptar</button>
           </div>
         </div>
@@ -956,14 +959,17 @@ export default function App({ onCambiarRol }) {
   // ─── Helpers para extraer valores únicos ────────────────────────────────────
   const uniq = arr => [...new Set(arr)].sort()
 
+  // Formato hora 24h "HH:MM" — usa el objeto Date completo para respetar la fecha
+  const fmt24 = (d) => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+
   // ─── Filtros Excel: Historial ────────────────────────────────────────────────
   // Valores únicos por columna (sobre la lista completa)
   const hVals = {
     fecha:    uniq(historial.map(h => formatFecha(h.vuelta))),
     persona:  uniq(historial.map(h => `${h.apellido} ${h.nombre}`.trim())),
     dni:      uniq(historial.map(h => String(h.dni))),
-    salida:   uniq(historial.map(h => formatHora(h.salida).slice(0,5))),
-    vuelta:   uniq(historial.map(h => formatHora(h.vuelta).slice(0,5))),
+    salida:   uniq(historial.map(h => fmt24(h.salida))),
+    vuelta:   uniq(historial.map(h => fmt24(h.vuelta))),
     estado:   ['✅ OK', '🟡 Tolerancia', '⚠️ Excedido'],
   }
 
@@ -997,12 +1003,12 @@ export default function App({ onCambiarRol }) {
   const getEstadoLabel = (h) => h.excedido ? '⚠️ Excedido' : h.enTolerancia ? '🟡 Tolerancia' : '✅ OK'
 
   const historialFiltrado = historial.filter(h => {
-    if (fhFecha.size   < hVals.fecha.length   && !fhFecha.has(formatFecha(h.vuelta)))                                  return false
-    if (fhPersona.size < hVals.persona.length && !fhPersona.has(`${h.apellido} ${h.nombre}`.trim()))                   return false
-    if (fhDni.size     < hVals.dni.length     && !fhDni.has(String(h.dni)))                                            return false
-    if (fhSalida.size  < hVals.salida.length  && !fhSalida.has(formatHora(h.salida).slice(0,5)))                       return false
-    if (fhVuelta.size  < hVals.vuelta.length  && !fhVuelta.has(formatHora(h.vuelta).slice(0,5)))                       return false
-    if (fhEstado.size  < hVals.estado.length  && !fhEstado.has(getEstadoLabel(h)))                                     return false
+    if (fhFecha.size   < hVals.fecha.length   && !fhFecha.has(formatFecha(h.vuelta)))                       return false
+    if (fhPersona.size < hVals.persona.length && !fhPersona.has(`${h.apellido} ${h.nombre}`.trim()))       return false
+    if (fhDni.size     < hVals.dni.length     && !fhDni.has(String(h.dni)))                                return false
+    if (fhSalida.size  < hVals.salida.length  && !fhSalida.has(fmt24(h.salida)))                           return false
+    if (fhVuelta.size  < hVals.vuelta.length  && !fhVuelta.has(fmt24(h.vuelta)))                           return false
+    if (fhEstado.size  < hVals.estado.length  && !fhEstado.has(getEstadoLabel(h)))                         return false
     return true
   })
 
@@ -1022,8 +1028,8 @@ export default function App({ onCambiarRol }) {
     nombre:   uniq(listaExcedidos.map(h => h.nombre   || '')),
     dni:      uniq(listaExcedidos.map(h => String(h.dni))),
     cuil:     uniq(listaExcedidos.map(h => h.cuil || '—')),
-    salida:   uniq(listaExcedidos.map(h => formatHora(h.salida).slice(0,5))),
-    vuelta:   uniq(listaExcedidos.map(h => formatHora(h.vuelta).slice(0,5))),
+    salida:   uniq(listaExcedidos.map(h => fmt24(h.salida))),
+    vuelta:   uniq(listaExcedidos.map(h => fmt24(h.vuelta))),
     estado:   ['🟡 Tolerancia', '⚠️ Excedido'],
   }
 
@@ -1058,14 +1064,14 @@ export default function App({ onCambiarRol }) {
   }
 
   const excedidosFiltrados = listaExcedidos.filter(h => {
-    if (feFecha.size    < eVals.fecha.length    && !feFecha.has(formatFecha(h.vuelta)))                       return false
-    if (feApellido.size < eVals.apellido.length && !feApellido.has(h.apellido || ''))                         return false
-    if (feNombre.size   < eVals.nombre.length   && !feNombre.has(h.nombre     || ''))                         return false
-    if (feDni.size      < eVals.dni.length      && !feDni.has(String(h.dni)))                                 return false
-    if (feCuil.size     < eVals.cuil.length     && !feCuil.has(h.cuil || '—'))                               return false
-    if (feSalida.size   < eVals.salida.length   && !feSalida.has(formatHora(h.salida).slice(0,5)))            return false
-    if (feVuelta.size   < eVals.vuelta.length   && !feVuelta.has(formatHora(h.vuelta).slice(0,5)))            return false
-    if (feEstado.size   < eVals.estado.length   && !feEstado.has(getEstadoLabel(h)))                          return false
+    if (feFecha.size    < eVals.fecha.length    && !feFecha.has(formatFecha(h.vuelta)))            return false
+    if (feApellido.size < eVals.apellido.length && !feApellido.has(h.apellido || ''))              return false
+    if (feNombre.size   < eVals.nombre.length   && !feNombre.has(h.nombre     || ''))              return false
+    if (feDni.size      < eVals.dni.length      && !feDni.has(String(h.dni)))                      return false
+    if (feCuil.size     < eVals.cuil.length     && !feCuil.has(h.cuil || '—'))                    return false
+    if (feSalida.size   < eVals.salida.length   && !feSalida.has(fmt24(h.salida)))                 return false
+    if (feVuelta.size   < eVals.vuelta.length   && !feVuelta.has(fmt24(h.vuelta)))                 return false
+    if (feEstado.size   < eVals.estado.length   && !feEstado.has(getEstadoLabel(h)))               return false
     return true
   })
 
@@ -1079,6 +1085,49 @@ export default function App({ onCambiarRol }) {
     feVuelta.size   < eVals.vuelta.length   ||
     feEstado.size   < eVals.estado.length
   )
+
+  // ─── Ordenamiento ─────────────────────────────────────────────────────────
+  // sortKey: null | 'fecha' | 'persona' | 'dni' | 'salida' | 'vuelta' | 'duracion' | 'estado'
+  // sortDir: null | 'asc' | 'desc'
+  // Ciclo: null → asc → desc → null
+  const [hSortKey, setHSortKey] = useState(null)
+  const [hSortDir, setHSortDir] = useState(null)
+  const [eSortKey, setESortKey] = useState(null)
+  const [eSortDir, setESortDir] = useState(null)
+
+  const cycleSort = (currentKey, currentDir, newKey, setKey, setDir) => {
+    if (currentKey !== newKey) { setKey(newKey); setDir('asc'); return }
+    if (currentDir === 'asc')  { setDir('desc'); return }
+    setKey(null); setDir(null)
+  }
+
+  // Comparadores — usan el timestamp real (Date object), no strings formateados
+  const sortFns = {
+    fecha:    (a, b) => a.vuelta  - b.vuelta,
+    salida:   (a, b) => a.salida  - b.salida,   // timestamp completo: respeta fecha + hora
+    vuelta:   (a, b) => a.vuelta  - b.vuelta,
+    duracion: (a, b) => a.segundosTomados - b.segundosTomados,
+    persona:  (a, b) => `${a.apellido} ${a.nombre}`.localeCompare(`${b.apellido} ${b.nombre}`, 'es'),
+    apellido: (a, b) => (a.apellido || '').localeCompare(b.apellido || '', 'es'),
+    nombre:   (a, b) => (a.nombre   || '').localeCompare(b.nombre   || '', 'es'),
+    dni:      (a, b) => String(a.dni).localeCompare(String(b.dni), undefined, { numeric: true }),
+    cuil:     (a, b) => String(a.cuil || '').localeCompare(String(b.cuil || ''), undefined, { numeric: true }),
+    estado:   (a, b) => getEstadoLabel(a).localeCompare(getEstadoLabel(b)),
+  }
+
+  const applySort = (lista, key, dir) => {
+    if (!key || !dir || !sortFns[key]) return lista
+    const fn = sortFns[key]
+    return [...lista].sort((a, b) => dir === 'asc' ? fn(a, b) : fn(b, a))
+  }
+
+  const historialOrdenado  = applySort(historialFiltrado,  hSortKey, hSortDir)
+  const excedidosOrdenados = applySort(excedidosFiltrados, eSortKey, eSortDir)
+
+  const hSort = (key) => cycleSort(hSortKey, hSortDir, key, setHSortKey, setHSortDir)
+  const eSort = (key) => cycleSort(eSortKey, eSortDir, key, setESortKey, setESortDir)
+  const hSD   = (key) => hSortKey === key ? hSortDir : null
+  const eSD   = (key) => eSortKey === key ? eSortDir : null
 
   return (
     <div className="dashboard">
@@ -1379,21 +1428,26 @@ export default function App({ onCambiarRol }) {
                   <thead>
                     <tr>
                       <th>#</th>
-                      <ColFilterHeader label="Fecha"    values={hVals.fecha}   selected={fhFecha}   onChange={setFhFecha} />
-                      <ColFilterHeader label="Persona"  values={hVals.persona} selected={fhPersona} onChange={setFhPersona} />
-                      <ColFilterHeader label="DNI"      values={hVals.dni}     selected={fhDni}     onChange={setFhDni} />
-                      <ColFilterHeader label="Salida"   values={hVals.salida}  selected={fhSalida}  onChange={setFhSalida} />
-                      <ColFilterHeader label="Vuelta"   values={hVals.vuelta}  selected={fhVuelta}  onChange={setFhVuelta} />
-                      <th>Duración</th>
-                      <ColFilterHeader label="Estado"   values={hVals.estado}  selected={fhEstado}  onChange={setFhEstado} />
+                      <ColFilterHeader label="Fecha"   values={hVals.fecha}   selected={fhFecha}   onChange={setFhFecha}   sortDir={hSD('fecha')}    onSort={() => hSort('fecha')} />
+                      <ColFilterHeader label="Persona" values={hVals.persona} selected={fhPersona} onChange={setFhPersona} sortDir={hSD('persona')}  onSort={() => hSort('persona')} />
+                      <ColFilterHeader label="DNI"     values={hVals.dni}     selected={fhDni}     onChange={setFhDni}     sortDir={hSD('dni')}      onSort={() => hSort('dni')} />
+                      <ColFilterHeader label="Salida"  values={hVals.salida}  selected={fhSalida}  onChange={setFhSalida}  sortDir={hSD('salida')}   onSort={() => hSort('salida')} />
+                      <ColFilterHeader label="Vuelta"  values={hVals.vuelta}  selected={fhVuelta}  onChange={setFhVuelta}  sortDir={hSD('vuelta')}   onSort={() => hSort('vuelta')} />
+                      <th className="th-sortable" onClick={() => hSort('duracion')}>
+                        <span>Duración</span>
+                        <span className={`th-sort-inline ${hSD('duracion') ? 'th-sort-active' : ''}`}>
+                          {hSD('duracion') === 'asc' ? '↑' : hSD('duracion') === 'desc' ? '↓' : '⇅'}
+                        </span>
+                      </th>
+                      <ColFilterHeader label="Estado"  values={hVals.estado}  selected={fhEstado}  onChange={setFhEstado}  sortDir={hSD('estado')}   onSort={() => hSort('estado')} />
                     </tr>
                   </thead>
                   <tbody>
-                    {historialFiltrado.length === 0 ? (
+                    {historialOrdenado.length === 0 ? (
                       <tr><td colSpan={8} className="td-empty">Sin resultados para los filtros aplicados</td></tr>
-                    ) : historialFiltrado.map((h, i) => (
+                    ) : historialOrdenado.map((h, i) => (
                       <tr key={i} className={h.excedido ? 'tr-excedido' : h.enTolerancia ? 'tr-tolerancia' : ''}>
-                        <td className="td-num">{historialFiltrado.length - i}</td>
+                        <td className="td-num">{historialOrdenado.length - i}</td>
                         <td>{formatFecha(h.vuelta)}</td>
                         <td className="td-persona">
                           <div className="tabla-avatar" style={{
@@ -1403,8 +1457,8 @@ export default function App({ onCambiarRol }) {
                           <span>{h.apellido} {h.nombre}</span>
                         </td>
                         <td>{h.dni}</td>
-                        <td>{formatHora(h.salida)}</td>
-                        <td>{formatHora(h.vuelta)}</td>
+                        <td>{fmt24(h.salida)}</td>
+                        <td>{fmt24(h.vuelta)}</td>
                         <td className={h.excedido ? 'text-red fw600' : h.enTolerancia ? 'text-warn fw600' : 'text-green fw600'}>
                           {formatDuracionSegundos(h.segundosTomados)}
                         </td>
@@ -1458,22 +1512,27 @@ export default function App({ onCambiarRol }) {
                   <thead>
                     <tr>
                       <th>#</th>
-                      <ColFilterHeader label="Fecha"     values={eVals.fecha}    selected={feFecha}    onChange={setFeFecha} />
-                      <ColFilterHeader label="Apellido"  values={eVals.apellido} selected={feApellido} onChange={setFeApellido} />
-                      <ColFilterHeader label="Nombre"    values={eVals.nombre}   selected={feNombre}   onChange={setFeNombre} />
-                      <ColFilterHeader label="DNI"       values={eVals.dni}      selected={feDni}      onChange={setFeDni} />
-                      <ColFilterHeader label="CUIL"      values={eVals.cuil}     selected={feCuil}     onChange={setFeCuil} />
-                      <ColFilterHeader label="H. Salida" values={eVals.salida}   selected={feSalida}   onChange={setFeSalida} />
-                      <ColFilterHeader label="H. Vuelta" values={eVals.vuelta}   selected={feVuelta}   onChange={setFeVuelta} />
-                      <th>Duración</th>
+                      <ColFilterHeader label="Fecha"     values={eVals.fecha}    selected={feFecha}    onChange={setFeFecha}    sortDir={eSD('fecha')}     onSort={() => eSort('fecha')} />
+                      <ColFilterHeader label="Apellido"  values={eVals.apellido} selected={feApellido} onChange={setFeApellido} sortDir={eSD('apellido')}  onSort={() => eSort('apellido')} />
+                      <ColFilterHeader label="Nombre"    values={eVals.nombre}   selected={feNombre}   onChange={setFeNombre}   sortDir={eSD('nombre')}    onSort={() => eSort('nombre')} />
+                      <ColFilterHeader label="DNI"       values={eVals.dni}      selected={feDni}      onChange={setFeDni}      sortDir={eSD('dni')}       onSort={() => eSort('dni')} />
+                      <ColFilterHeader label="CUIL"      values={eVals.cuil}     selected={feCuil}     onChange={setFeCuil}     sortDir={eSD('cuil')}      onSort={() => eSort('cuil')} />
+                      <ColFilterHeader label="H. Salida" values={eVals.salida}   selected={feSalida}   onChange={setFeSalida}   sortDir={eSD('salida')}    onSort={() => eSort('salida')} />
+                      <ColFilterHeader label="H. Vuelta" values={eVals.vuelta}   selected={feVuelta}   onChange={setFeVuelta}   sortDir={eSD('vuelta')}    onSort={() => eSort('vuelta')} />
+                      <th className="th-sortable" onClick={() => eSort('duracion')}>
+                        <span>Duración</span>
+                        <span className={`th-sort-inline ${eSD('duracion') ? 'th-sort-active' : ''}`}>
+                          {eSD('duracion') === 'asc' ? '↑' : eSD('duracion') === 'desc' ? '↓' : '⇅'}
+                        </span>
+                      </th>
                       <th>Se pasó</th>
-                      <ColFilterHeader label="Estado"    values={eVals.estado}   selected={feEstado}   onChange={setFeEstado} />
+                      <ColFilterHeader label="Estado"    values={eVals.estado}   selected={feEstado}   onChange={setFeEstado}   sortDir={eSD('estado')}    onSort={() => eSort('estado')} />
                     </tr>
                   </thead>
                   <tbody>
-                    {excedidosFiltrados.length === 0 ? (
+                    {excedidosOrdenados.length === 0 ? (
                       <tr><td colSpan={11} className="td-empty">Sin resultados para los filtros aplicados</td></tr>
-                    ) : excedidosFiltrados.map((h, i) => (
+                    ) : excedidosOrdenados.map((h, i) => (
                       <tr key={i} className={h.excedido ? 'tr-excedido' : 'tr-tolerancia'}>
                         <td className="td-num">{i + 1}</td>
                         <td>{formatFecha(h.vuelta)}</td>
@@ -1481,8 +1540,8 @@ export default function App({ onCambiarRol }) {
                         <td>{h.nombre}</td>
                         <td>{h.dni}</td>
                         <td>{h.cuil || '—'}</td>
-                        <td>{formatHora(h.salida)}</td>
-                        <td>{formatHora(h.vuelta)}</td>
+                        <td>{fmt24(h.salida)}</td>
+                        <td>{fmt24(h.vuelta)}</td>
                         <td className={h.excedido ? 'text-red fw600' : 'text-warn fw600'}>
                           {formatDuracionSegundos(h.segundosTomados)}
                         </td>

@@ -20,6 +20,8 @@ const COLOR_OK         = '#22c55e'
 const COLOR_TOLERANCIA = '#f59e0b'
 const COLOR_EXCEDIDO   = '#ef4444'
 const COLOR_WARN       = '#f59e0b'
+const COLOR_CRITICO    = '#7c3aed'   // violeta — reincidentes ≥3 excesos
+const LIMITE_REINCIDENCIAS = 3
 
 // ─── Parser DNI PDF417 ───────────────────────────────────────────────────────
 /*function parsearDNI(raw) {
@@ -505,6 +507,7 @@ export default function App({ onCambiarRol }) {
   const [esperando, setEsperando] = useState(true)
   const [error, setError] = useState('')
   const [flash, setFlash] = useState(null)
+  const [alertaCritica, setAlertaCritica] = useState(null) // { apellido, nombre, dni, veces }
   const [descansos, setDescansos] = useState({})
   const [historial, setHistorial] = useState([])
   const [tab, setTab] = useState('dashboard') // 'dashboard' | 'historial' | 'excedidos'
@@ -517,8 +520,15 @@ export default function App({ onCambiarRol }) {
   const [formData, setFormData] = useState({ nombre: '', apellido: '', dni: '', cuil: '' })
   // autorizados: null = cargando | array de strings de DNI del día
   const [autorizados, setAutorizados] = useState(null)
-  // Ref para que procesarScan siempre lea el valor más reciente sin depender del closure
-  const autorizadosRef = useRef(null)
+  // Refs para que el listener del scanner siempre lea valores frescos sin recrearse
+  const autorizadosRef    = useRef(null)
+  const descansosRef      = useRef({})
+  const historialRef      = useRef([])
+  const procesarScanRef   = useRef(null)   // se actualiza en cada render
+
+  // Sincronizar refs con state en cada render (costo mínimo, evita closures viejos)
+  descansosRef.current  = descansos
+  historialRef.current  = historial
 
   // ─── Rehidratar estado desde Google Sheets al montar ──────────────────────
   useEffect(() => {
@@ -651,12 +661,12 @@ export default function App({ onCambiarRol }) {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Enter') {
-        e.preventDefault() // evita que el browser haga scroll o active botones enfocados
+        e.preventDefault()
         const datos = bufferRef.current
         bufferRef.current = ''
         setBuffer('')
         clearTimeout(timerRef.current)
-        if (datos.length > 10) procesarScan(datos)
+        if (datos.length > 10) procesarScanRef.current(datos)
         return
       }
       if (e.key.length > 1) return
@@ -667,7 +677,7 @@ export default function App({ onCambiarRol }) {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [descansos, historial])
+  }, [])  // ← sin dependencias: el listener se monta una sola vez y nunca se recrea
 
   const procesarScan = (raw) => {
     setError('')
@@ -681,9 +691,13 @@ export default function App({ onCambiarRol }) {
     }
     const ahora = ahoraDate()
 
-    // ── Bloqueo 12h: verificar si ya tomó descanso en las últimas 12 horas ──
+    // Leer siempre del ref — nunca del closure viejo
+    const descansosActuales = descansosRef.current
+    const historialActual   = historialRef.current
+
+    // ── Bloqueo 12h ──
     const SEGS_12H = 12 * 60 * 60
-    const descansoPrevio = historial.find(
+    const descansoPrevio = historialActual.find(
       (h) => String(h.dni) === String(datos.dni) &&
              diffSegundos(h.vuelta, ahora) < SEGS_12H
     )
@@ -699,40 +713,42 @@ export default function App({ onCambiarRol }) {
       return
     }
 
-    // ── Bloqueo de autorización: fetch fresco para evitar problemas de caché/closure ──
-    const estaActivo = descansos[datos.dni] // si ya está en descanso, lo dejamos volver sin check
+    // ── Bloqueo de autorización: usa el ref — sin red, instantáneo ──
+    const estaActivo = descansosActuales[datos.dni]
     if (!estaActivo) {
-      obtenerAutorizados().then((dataFresca) => {
-        const listaFresca = Array.isArray(dataFresca) ? dataFresca.map((a) => String(a.dni).trim()) : []
-        autorizadosRef.current = listaFresca
-        setAutorizados(listaFresca)
-        if (!listaFresca.includes(String(datos.dni).trim())) {
-          setError(
-            `${datos.apellido} ${datos.nombre} no está autorizado para salir al descanso. ` +
-            `Un supervisor debe autorizarlo primero.`
-          )
-          setEsperando(true)
-          return
-        }
-        procesarSalida(datos, ahora)
-      }).catch(() => {
-        // Si falla el fetch, usar la lista en memoria como fallback
-        if (autorizadosRef.current !== null && !autorizadosRef.current.includes(String(datos.dni).trim())) {
-          setError(
-            `${datos.apellido} ${datos.nombre} no está autorizado para salir al descanso. ` +
-            `Un supervisor debe autorizarlo primero.`
-          )
-          setEsperando(true)
-          return
-        }
-        procesarSalida(datos, ahora)
-      })
+      const lista = autorizadosRef.current
+
+      if (lista === null) {
+        // Primera carga todavía no terminó — fetch único de fallback
+        obtenerAutorizados().then((dataFresca) => {
+          const listaFresca = Array.isArray(dataFresca) ? dataFresca.map((a) => String(a.dni).trim()) : []
+          autorizadosRef.current = listaFresca
+          setAutorizados(listaFresca)
+          if (!listaFresca.includes(String(datos.dni).trim())) {
+            setError(`${datos.apellido} ${datos.nombre} no está autorizado para salir al descanso. Un supervisor debe autorizarlo primero.`)
+            setEsperando(true)
+            return
+          }
+          procesarSalida(datos, ahora)
+        }).catch(() => procesarSalida(datos, ahora))
+        return
+      }
+
+      if (!lista.includes(String(datos.dni).trim())) {
+        setError(`${datos.apellido} ${datos.nombre} no está autorizado para salir al descanso. Un supervisor debe autorizarlo primero.`)
+        setEsperando(true)
+        return
+      }
+
+      procesarSalida(datos, ahora)
       return
     }
 
-    // Si ya está activo (vuelta), procesar directamente
     procesarVuelta(datos, ahora)
   }
+
+  // Actualizar el ref de procesarScan en cada render para que el listener siempre use la última versión
+  procesarScanRef.current = procesarScan
 
   const procesarSalida = (datos, ahora) => {
     const nuevo = { ...datos, salida: ahora }
@@ -757,7 +773,7 @@ export default function App({ onCambiarRol }) {
   }
 
   const procesarVuelta = (datos, ahora) => {
-    const existente = descansos[datos.dni]
+    const existente = descansosRef.current[datos.dni]
     if (!existente) return
 
     const segundosTomados = diffSegundos(existente.salida, ahora)
@@ -771,7 +787,22 @@ export default function App({ onCambiarRol }) {
       return siguiente
     })
     setFlash({ tipo: 'vuelta', datos: registro })
-    setHistorial((h) => [registro, ...h])
+    setHistorial((h) => {
+      const nuevo = [registro, ...h]
+      // Contar excesos totales de esta persona en el historial actualizado
+      if (excedido) {
+        const vecesExcedido = nuevo.filter(r => String(r.dni) === String(datos.dni) && r.excedido).length
+        if (vecesExcedido >= LIMITE_REINCIDENCIAS) {
+          setAlertaCritica({
+            apellido: registro.apellido,
+            nombre:   registro.nombre,
+            dni:      registro.dni,
+            veces:    vecesExcedido,
+          })
+        }
+      }
+      return nuevo
+    })
     setEsperando(false)
 
     const textoExcedido = excedido
@@ -943,6 +974,18 @@ export default function App({ onCambiarRol }) {
 
   // Top 5 para dashboard
   const topExcedidos = listaExcedidos.slice(0, 5)
+
+  // ─── Reincidentes: personas con ≥ LIMITE_REINCIDENCIAS excesos ────────────
+  const conteoExcesosPorDni = historial.reduce((acc, h) => {
+    if (!h.excedido) return acc
+    const key = String(h.dni)
+    if (!acc[key]) acc[key] = { apellido: h.apellido, nombre: h.nombre, dni: h.dni, veces: 0 }
+    acc[key].veces++
+    return acc
+  }, {})
+  const reincidentes = Object.values(conteoExcesosPorDni)
+    .filter(r => r.veces >= LIMITE_REINCIDENCIAS)
+    .sort((a, b) => b.veces - a.veces)
 
   // ─── Filtros de búsqueda (activos: texto libre) ───────────────────────────
   const filtrar = (lista, q) => {
@@ -1238,6 +1281,25 @@ export default function App({ onCambiarRol }) {
           </div>
         )}
 
+        {/* ── Alerta crítica de reincidencia ── */}
+        {alertaCritica && (
+          <div className="alerta-critica" role="alert">
+            <div className="alerta-critica-icono">🚨</div>
+            <div className="alerta-critica-body">
+              <div className="alerta-critica-titulo">¡Reincidente crítico!</div>
+              <div className="alerta-critica-persona">
+                {alertaCritica.apellido} {alertaCritica.nombre}
+                <span className="alerta-critica-dni">DNI {alertaCritica.dni}</span>
+              </div>
+              <div className="alerta-critica-msg">
+                Se excedió <strong>{alertaCritica.veces} {alertaCritica.veces === 1 ? 'vez' : 'veces'}</strong> en el descanso.
+                {alertaCritica.veces >= LIMITE_REINCIDENCIAS && ' Requiere atención del supervisor.'}
+              </div>
+            </div>
+            <button className="alerta-critica-close" onClick={() => setAlertaCritica(null)}>✕</button>
+          </div>
+        )}
+
         {/* ══════════════ DASHBOARD ══════════════ */}
         {tab === 'dashboard' && (
           <>
@@ -1248,6 +1310,7 @@ export default function App({ onCambiarRol }) {
               <KpiCard icon="⚠️" label="Excedidos"         value={excedidosCount}  sub={`más de ${MINUTOS_DESCANSO + MINUTOS_TOLERANCIA} min`} color={COLOR_EXCEDIDO} />
               <KpiCard icon="⏱"  label="Tiempo promedio"   value={formatDuracionSegundos(tiempoPromedioSegs)} sub="por descanso" color={COLOR_WARN} />
               <KpiCard icon="🧑" label="En descanso ahora" value={activosArray.length} sub="personas activas"                  color={COLOR_PRIMARY} />
+              <KpiCard icon="🔴" label="Reincidentes"      value={reincidentes.length} sub={`≥${LIMITE_REINCIDENCIAS} excesos`} color={COLOR_CRITICO} />
             </div>
 
             {activosArray.length > 0 && (
@@ -1394,6 +1457,37 @@ export default function App({ onCambiarRol }) {
                 <div className="empty-title">Sin registros aún</div>
                 <div className="empty-sub">Escaneá el DNI de un empleado para comenzar</div>
               </div>
+            )}
+
+            {/* ── Reincidentes críticos ── */}
+            {reincidentes.length > 0 && (
+              <section className="section-card section-card-critico">
+                <div className="section-header">
+                  <h2 className="section-title">
+                    <span className="section-dot" style={{ background: COLOR_CRITICO }} />
+                    🔴 Reincidentes críticos
+                  </h2>
+                  <span className="section-badge" style={{ background: `${COLOR_CRITICO}18`, color: COLOR_CRITICO }}>
+                    {reincidentes.length} persona{reincidentes.length !== 1 ? 's' : ''} — ≥{LIMITE_REINCIDENCIAS} excesos
+                  </span>
+                </div>
+                <div className="rank-list">
+                  {reincidentes.map((r, i) => (
+                    <div key={r.dni} className="rank-item rank-item-critico">
+                      <div className="rank-pos" style={{ background: COLOR_CRITICO, color: '#fff' }}>
+                        {r.veces}×
+                      </div>
+                      <div className="rank-info">
+                        <div className="rank-nombre" style={{ color: COLOR_CRITICO }}>{r.apellido} {r.nombre}</div>
+                        <div className="rank-dni">DNI {r.dni}</div>
+                      </div>
+                      <div className="rank-tiempo">
+                        <span className="badge badge-critico">⚠️ {r.veces} excesos</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
           </>
         )}

@@ -1,5 +1,5 @@
 // Reemplazá esto con la URL larga que te dio Google al implementar (termina en /exec)
-const URL_API = "https://script.google.com/macros/s/AKfycbzTQzTGPbUTblLj31JgcJfUXQ1_d3N4b5UtCeXfFttX9IjwAYzp4Vu72gjRrohiZlQh/exec"
+const URL_API = "https://script.google.com/macros/s/AKfycbzTrqvFzrh93vw6Yw0gOAofEUkmfTrc-mQmxvcqn3auTUIDL3jumcO0p6H2_8j2YLBy/exec"
 
 // Helper: hora actual en formato 24h "HH:MM:SS" sin AM/PM
 function horaActual24h() {
